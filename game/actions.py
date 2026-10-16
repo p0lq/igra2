@@ -232,33 +232,26 @@ def roll_loot(kind, rnd=random):
     return items
 
 
-def take_from_container(game, st, n):
-    items = game.container_items()
+def take_from(game, items, st):
+    """Взять стопку из списка (контейнер, куча на земле) в инвентарь."""
+    p = game.player
     if items is None or st not in items:
         return
-    p = game.player
-    if ITEMS[st["id"]]["w"] * n + p.weight() > p.carry_limit() * 1.5:
+    if not p.god and ITEMS[st["id"]]["w"] * st["n"] + p.weight() > p.carry_limit() * 1.5:
         game.log("Слишком тяжело — не унести.", "bad")
         return
     items.remove(st)
-    inv.add(p.items, st["id"], n, stack=st)
+    inv.add(p.items, st["id"], st["n"], stack=st)
     game.sound.play("pickup")
+    from .dialogue import apply
     for e in ITEMS[st["id"]].get("on_pickup", []):
-        from .dialogue import apply
         apply(game, e)
-    game.sel_item = None
+    if game.sel_item is st:
+        game.sel_item = None
 
 
-def take_all(game):
-    items = game.container_items()
-    if items is None:
-        return
-    for st in list(items):
-        take_from_container(game, st, st["n"])
-
-
-def move_to_container(game, st, n):
-    items = game.container_items()
+def put_into(game, items, st):
+    """Положить стопку из инвентаря в контейнер."""
     p = game.player
     if items is None or st not in p.items:
         return
@@ -266,8 +259,31 @@ def move_to_container(game, st, n):
         game.log("Это лучше оставить при себе.", "info")
         return
     p.items.remove(st)
-    inv.add(items, st["id"], n, stack=st)
-    game.sel_item = None
+    inv.add(items, st["id"], st["n"], stack=st)
+    if game.sel_item is st:
+        game.sel_item = None
+
+
+def fits_slot(item_id, slot):
+    """Можно ли надеть предмет в этот слот снаряжения."""
+    it = ITEMS[item_id]
+    if slot == "weapon":
+        return it["type"] in ("weapon", "gun")
+    return it["type"] == "clothing" and it.get("slot") == slot
+
+
+def take_from_container(game, st, n=None):
+    take_from(game, game.container_items(), st)
+
+
+def take_all(game):
+    items = game.container_items()
+    for st in list(items or []):
+        take_from(game, items, st)
+
+
+def move_to_container(game, st, n=None):
+    put_into(game, game.container_items(), st)
 
 
 # ====================================================================== лечение

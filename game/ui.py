@@ -8,12 +8,14 @@ import math
 
 import pygame
 
-from .config import (SCREEN_W, SCREEN_H, COL_PANEL, COL_PANEL_DARK, COL_PANEL_EDGE, COL_TEXT,
-                     COL_TEXT_DIM, COL_ACCENT, COL_RED, COL_GREEN, COL_TURQ, COL_BAD, TITLE, VERSION)
+from .config import (COL_PANEL, COL_PANEL_DARK, COL_PANEL_EDGE, COL_TEXT, COL_TEXT_DIM, COL_ACCENT,
+                     COL_RED, COL_GREEN, COL_TURQ, COL_BAD, TITLE, VERSION)
+from . import config as cfg
 from .data import ITEMS, RECIPES, SKILLS, TRAITS, QUESTS, GLOSSARY, CHARACTER, OBJECTS
 from .localization import parse_markup
 from . import inventory as inv
-from . import crafting, actions, save
+from . import crafting, actions, save, icons
+from . import settings as settings_mod
 
 MSG_COLORS = {"info": COL_TEXT, "good": COL_GREEN, "bad": COL_BAD, "lang": COL_TURQ, "quest": COL_ACCENT}
 
@@ -27,7 +29,9 @@ class UI:
         self.wheel = 0
         self.scroll = {}
         self.tab = 0
-        self.text_input = ""
+        self.release = None      # где отпустили левую кнопку (для перетаскивания)
+        self.shift = False
+        self.active = None       # ползунок, который сейчас тянут мышью
 
     # ------------------------------------------------------------ базовые элементы
     def font(self, size, bold=False):
@@ -46,9 +50,13 @@ class UI:
         self.mouse = pygame.mouse.get_pos()
         self.click = None
         self.rclick = None
+        self.release = None
         self.wheel = 0
+        self.shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
         for e in events:
-            if e.type == pygame.MOUSEBUTTONDOWN:
+            if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                self.release = e.pos
+            elif e.type == pygame.MOUSEBUTTONDOWN:
                 if e.button == 1:
                     self.click = e.pos
                 elif e.button == 3:
@@ -214,13 +222,57 @@ class UI:
         return hit, rhit, hov
 
 
+    def slider(self, surf, key, rect, value, lo=0, hi=100):
+        """Ползунок. Тянуть можно, даже если мышь ушла за его пределы, пока кнопка зажата."""
+        r = pygame.Rect(rect)
+        if self.click and r.inflate(0, 14).collidepoint(self.click):
+            self.active = key
+            self.click = None
+        if self.active == key:
+            if pygame.mouse.get_pressed()[0]:
+                value = lo + (hi - lo) * max(0.0, min(1.0, (self.mouse[0] - r.x) / r.w))
+            else:
+                self.active = None
+        frac = (value - lo) / (hi - lo)
+        pygame.draw.rect(surf, (30, 26, 20), r)
+        pygame.draw.rect(surf, COL_ACCENT, (r.x, r.y, int(r.w * frac), r.h))
+        pygame.draw.rect(surf, COL_PANEL_EDGE, r, 1)
+        kx = r.x + int(r.w * frac)
+        pygame.draw.rect(surf, (230, 214, 170), (kx - 4, r.y - 5, 8, r.h + 10))
+        return int(round(value))
+
+    def selector(self, surf, rect, text):
+        """Переключатель «◄ значение ►». Возвращает -1, 0 или +1."""
+        r = pygame.Rect(rect)
+        d = 0
+        if self.button(surf, (r.x, r.y, 32, r.h), "◄"):
+            d = -1
+        if self.button(surf, (r.right - 32, r.y, 32, r.h), "►"):
+            d = 1
+        pygame.draw.rect(surf, COL_PANEL_DARK, (r.x + 36, r.y, r.w - 72, r.h))
+        self.text(surf, text, (r.centerx, r.y + r.h // 2 - 10), COL_TEXT, 15, center=True)
+        return d
+
+    def checkbox(self, surf, rect, label, value):
+        r = pygame.Rect(rect)
+        box = pygame.Rect(r.x, r.y + (r.h - 20) // 2, 20, 20)
+        pygame.draw.rect(surf, COL_PANEL_DARK, box)
+        pygame.draw.rect(surf, COL_PANEL_EDGE, box, 1)
+        if value:
+            pygame.draw.rect(surf, COL_ACCENT, box.inflate(-8, -8))
+        self.text(surf, label, (box.right + 10, r.y + r.h // 2 - 10), COL_TEXT, 15)
+        if self.clicked(r):
+            return not value
+        return value
+
+
 # ====================================================================== HUD
 
 def draw_hud(screen, ui, game):
     p = game.player
     clock = game.clock
     # --- приборная панель внизу слева
-    ui.panel(screen, (0, SCREEN_H - 112, 560, 112))
+    ui.panel(screen, (0, cfg.SCREEN_H - 112, 560, 112))
     gauges = [
         ("Здоровье", p.health / 100, f"{int(p.health)}", False),
         ("Голод", p.hunger / 100, f"{int(p.hunger)}", True),
@@ -233,13 +285,13 @@ def draw_hud(screen, ui, game):
     for i, (lab, frac, val, high) in enumerate(gauges):
         cx = 42 + i * 79
         if high is None:   # температура: опасны оба края
-            ui.gauge(screen, cx, SCREEN_H - 66, 30, frac, lab, val, danger_high=True)
+            ui.gauge(screen, cx, cfg.SCREEN_H - 66, 30, frac, lab, val, danger_high=True)
         else:
-            ui.gauge(screen, cx, SCREEN_H - 66, 30, frac, lab, val, danger_high=high)
+            ui.gauge(screen, cx, cfg.SCREEN_H - 66, 30, frac, lab, val, danger_high=high)
 
     # --- состояния («муды»)
     over = p.weight() > p.carry_limit()
-    x, y = 572, SCREEN_H - 108
+    x, y = 572, cfg.SCREEN_H - 108
     for name, lvl in p.moodles(over)[:10]:
         col = {1: (200, 170, 80), 2: (220, 120, 50), 3: (220, 60, 45)}[lvl]
         w = ui.font(14).size(name)[0] + 14
@@ -259,15 +311,20 @@ def draw_hud(screen, ui, game):
         wtxt = "Под землёй"
     air = 14 if game.zone.dark else int(clock.air_temp())
     ui.text(screen, f"{game.zone.name} · {wtxt} · {air}°C", (14, 34), COL_TEXT, 14)
+    if p.god or p.noclip:
+        tag = " + ".join(t for t, on in (("РЕЖИМ БОГА", p.god), ("NOCLIP", p.noclip)) if on)
+        ui.text(screen, tag + "  (F10)", (cfg.SCREEN_W // 2, 44), (255, 215, 90), 18, bold=True, center=True)
+    if game.settings["show_fps"]:
+        ui.text(screen, f"FPS {game.clock_fps.get_fps():.0f}", (cfg.SCREEN_W - 10, 72), COL_GREEN, 14, right=True)
     if clock.front:
         if int(game.time_real * 2) % 2:
-            ui.text(screen, "ПЫЛЬНЫЙ ФРОНТ!", (SCREEN_W // 2, 12), COL_RED, 24, bold=True, center=True)
+            ui.text(screen, "ПЫЛЬНЫЙ ФРОНТ!", (cfg.SCREEN_W // 2, 12), COL_RED, 24, bold=True, center=True)
 
     # --- оружие и режимы сверху справа
-    ui.panel(screen, (SCREEN_W - 300, 0, 300, 66))
+    ui.panel(screen, (cfg.SCREEN_W - 300, 0, 300, 66))
     st, it = p.weapon()
     wname = inv.label(st) if st else "Голые руки"
-    ui.text(screen, wname, (SCREEN_W - 286, 8), COL_TEXT, 15)
+    ui.text(screen, wname, (cfg.SCREEN_W - 286, 8), COL_TEXT, 15)
     modes = []
     if p.sneaking:
         modes.append("крадусь")
@@ -277,15 +334,15 @@ def draw_hud(screen, ui, game):
         modes.append("фонарь: " + ("вкл" if p.has_light() else "выкл"))
     if p.equip["face"]:
         modes.append("фильтр %d ч" % (p.equip["face"].get("filter", 0) // 60))
-    ui.text(screen, " · ".join(modes) if modes else "Z — красться, Shift — бег", (SCREEN_W - 286, 34), COL_TEXT_DIM, 13)
+    ui.text(screen, " · ".join(modes) if modes else "Z — красться, Shift — бег", (cfg.SCREEN_W - 286, 34), COL_TEXT_DIM, 13)
 
     # --- журнал сообщений (на полупрозрачной подложке, чтобы читался поверх карты)
     recent = [m for m in game.messages[-7:] if m["t"] > 0]
     if recent:
         back = pygame.Surface((560, 20 * len(recent) + 8), pygame.SRCALPHA)
         back.fill((14, 12, 10, 150))
-        screen.blit(back, (4, SCREEN_H - 116 - 20 * len(recent)))
-    y = SCREEN_H - 132
+        screen.blit(back, (4, cfg.SCREEN_H - 116 - 20 * len(recent)))
+    y = cfg.SCREEN_H - 132
     for m in reversed(recent):
         alpha = max(0, min(1, m["t"] / 2))
         col = MSG_COLORS.get(m["kind"], COL_TEXT)
@@ -297,101 +354,359 @@ def draw_hud(screen, ui, game):
     if p.action:
         a = p.action
         frac = 1 - a["left"] / a["time"]
-        ui.text(screen, a["name"], (SCREEN_W // 2, SCREEN_H - 168), COL_TEXT, 16, center=True)
-        ui.bar(screen, (SCREEN_W // 2 - 120, SCREEN_H - 146, 240, 12), frac, COL_ACCENT)
-    elif game.hint and not game.window:
+        ui.text(screen, a["name"], (cfg.SCREEN_W // 2, cfg.SCREEN_H - 168), COL_TEXT, 16, center=True)
+        ui.bar(screen, (cfg.SCREEN_W // 2 - 120, cfg.SCREEN_H - 146, 240, 12), frac, COL_ACCENT)
+    elif game.hint and not game.window and game.settings["hints"]:
         img = ui.font(17).render(game.hint, True, (240, 220, 160))
         back = pygame.Surface((img.get_width() + 20, img.get_height() + 6), pygame.SRCALPHA)
         back.fill((14, 12, 10, 160))
-        hx, hy = SCREEN_W // 2 - back.get_width() // 2, SCREEN_H // 2 + 70
+        hx, hy = cfg.SCREEN_W // 2 - back.get_width() // 2, cfg.SCREEN_H // 2 + 70
         screen.blit(back, (hx, hy))
         screen.blit(img, (hx + 10, hy + 3))
 
-    pygame.draw.rect(screen, COL_PANEL_DARK, (SCREEN_W - 560, SCREEN_H - 26, 560, 26))
+    pygame.draw.rect(screen, COL_PANEL_DARK, (cfg.SCREEN_W - 560, cfg.SCREEN_H - 26, 560, 26))
     ui.text(screen, "I инвентарь · C крафт · H здоровье · J журнал · G словарик · Esc меню · F1 помощь",
-            (SCREEN_W - 10, SCREEN_H - 22), COL_TEXT_DIM, 13, right=True)
+            (cfg.SCREEN_W - 10, cfg.SCREEN_H - 22), COL_TEXT_DIM, 13, right=True)
 
 
 # ====================================================================== окна
 
-WIN = pygame.Rect(150, 60, 980, 560)
+def _win(w=980, h=560):
+    """Прямоугольник окна по центру экрана (разрешение может меняться в настройках)."""
+    return pygame.Rect((cfg.SCREEN_W - w) // 2, (cfg.SCREEN_H - h) // 2, w, h)
 
 
-def _close_button(screen, ui, game, rect=WIN):
+def _close_button(screen, ui, game, rect=None):
+    rect = rect or _win()
     if ui.button(screen, (rect.right - 40, rect.y + 8, 28, 26), "×", size=18):
         game.close_window()
 
 
+SLOT = 52
+EQUIP_SLOTS = [("weapon", "Оружие"), ("body", "Одежда"), ("head", "Голова"),
+               ("face", "Лицо"), ("back", "Спина"), ("light", "Свет")]
+CATEGORIES = [("all", "Всё"), ("food", "Еда"), ("weapon", "Оружие"), ("medical", "Медицина"),
+              ("clothing", "Одежда"), ("material", "Материалы"), ("other", "Прочее")]
+CAT_TYPES = {"food": {"food", "drink"}, "weapon": {"weapon", "gun", "ammo"}, "medical": {"medical"},
+             "clothing": {"clothing"}, "material": {"material"}, "other": {"book", "note", "misc"}}
+_TYPE_NAMES = {"food": "еда", "drink": "питьё", "weapon": "оружие", "gun": "огнестрел", "ammo": "патроны",
+               "medical": "медицина", "clothing": "одежда", "material": "материал", "book": "книга",
+               "note": "записка", "misc": "разное"}
+
+
+def _draw_stack(screen, ui, st, r, iid=None):
+    """Иконка предмета в ячейке: количество, полоска прочности, патроны."""
+    iid = iid or st["id"]
+    it = ITEMS[iid]
+    screen.blit(icons.get(iid), (r.x + (r.w - 40) // 2, r.y + (r.h - 40) // 2))
+    if st is None:
+        return
+    if st["n"] > 1:
+        t = str(st["n"])
+        ui.text(screen, t, (r.right - 3, r.bottom - 19), (0, 0, 0), 14, bold=True, right=True)
+        ui.text(screen, t, (r.right - 4, r.bottom - 20), (250, 240, 210), 14, bold=True, right=True)
+    if "dur" in st and it.get("dur"):
+        frac = max(0, st["dur"] / it["dur"])
+        col = (90, 180, 80) if frac > 0.5 else ((220, 180, 60) if frac > 0.2 else (210, 60, 50))
+        pygame.draw.rect(screen, (20, 18, 14), (r.x + 5, r.bottom - 6, r.w - 10, 3))
+        pygame.draw.rect(screen, col, (r.x + 5, r.bottom - 6, int((r.w - 10) * frac), 3))
+    if it["type"] == "gun":
+        ui.text(screen, f"{st.get('loaded', 0)}/{it['mag']}", (r.x + 4, r.y + 2), (240, 220, 160), 11)
+    if it["type"] == "note" and not st.get("read"):
+        ui.text(screen, "?", (r.x + 5, r.y + 1), COL_TURQ, 14, bold=True)
+
+
+def _grid(screen, ui, key, rect, entries, kind, selected=None):
+    """Сетка ячеек как в Minecraft. entries — [(стопка или None, id предмета)].
+    Возвращает [(прямоугольник ячейки, вид, запись)] — по ним потом ищем, куда кликнули."""
+    r = pygame.Rect(rect)
+    cols, rows = r.w // SLOT, r.h // SLOT
+    total_rows = max(rows, -(-len(entries) // cols))
+    off = ui.scroll.get(key, 0)
+    if ui.hovered(r) and ui.wheel:
+        off -= ui.wheel
+    off = max(0, min(off, total_rows - rows))
+    ui.scroll[key] = off
+    hits = []
+    for i in range(rows * cols):
+        idx = off * cols + i
+        cr = pygame.Rect(r.x + (i % cols) * SLOT, r.y + (i // cols) * SLOT, SLOT - 4, SLOT - 4)
+        entry = entries[idx] if idx < len(entries) else None
+        sel = entry is not None and selected is not None and entry[0] is selected
+        hov = ui.hovered(cr)
+        pygame.draw.rect(screen, (38, 34, 27), cr)
+        pygame.draw.rect(screen, COL_ACCENT if sel else ((140, 124, 90) if hov else (74, 66, 50)), cr, 2 if sel else 1)
+        if entry is not None:
+            _draw_stack(screen, ui, entry[0], cr, entry[1])
+            hits.append((cr, kind, entry))
+    if total_rows > rows:
+        frac = off / (total_rows - rows)
+        pygame.draw.rect(screen, (120, 106, 76), (r.right - 3, r.y + int((r.h - 30) * frac), 3, 30))
+    return hits
+
+
+def _tooltip(screen, ui, iid, st):
+    it = ITEMS[iid]
+    lines = [inv.label(st) if st else it["name"], f"{it['w']} кг · {_TYPE_NAMES.get(it['type'], '')}"]
+    w = max(ui.font(14).size(l)[0] for l in lines) + 16
+    x = min(ui.mouse[0] + 16, cfg.SCREEN_W - w - 4)
+    y = min(ui.mouse[1] + 12, cfg.SCREEN_H - 50)
+    pygame.draw.rect(screen, (20, 18, 14), (x, y, w, 44))
+    pygame.draw.rect(screen, COL_PANEL_EDGE, (x, y, w, 44), 1)
+    ui.text(screen, lines[0], (x + 8, y + 4), COL_ACCENT, 14)
+    ui.text(screen, lines[1], (x + 8, y + 23), COL_TEXT_DIM, 13)
+
+
 def draw_inventory(screen, ui, game):
+    """Инвентарь-сетка: снаряжение слева, вещи в центре, справа — контейнер/земля
+    или каталог всех предметов (в режиме бога). Предметы перетаскиваются мышью."""
     p = game.player
-    title = "Инвентарь"
-    ui.panel(screen, WIN, title)
-    _close_button(screen, ui, game)
-    cont = game.container_items()
-    items = sorted(p.items, key=inv.sort_key)
+    W = _win(1040, 640)
+    ui.panel(screen, W, "Инвентарь" + ("   · РЕЖИМ БОГА: бери что угодно из каталога" if p.god else ""))
+    _close_button(screen, ui, game, W)
+    hits = []
+    ty = W.y + 46
+    gy = W.y + 70
 
-    # --- левая колонка: вещи игрока
-    lx, ly = WIN.x + 16, WIN.y + 44
-    ui.text(screen, f"Вес: {p.weight():.1f} / {p.carry_limit():.0f} кг", (lx, ly), COL_BAD if p.weight() > p.carry_limit() else COL_TEXT_DIM, 14)
-    rows = [(inv.label(st), COL_TEXT, st is game.sel_item) for st in items]
-    hit, rhit, _ = ui.scroll_list(screen, "inv", (lx, ly + 22, 320, 440), rows)
-    if hit is not None:
-        game.sel_item = items[hit]
-        game.sel_from = "player"
-    if rhit is not None:
-        st = items[rhit]
-        if cont is not None:
-            actions.move_to_container(game, st, st["n"])
+    # --- снаряжение
+    ex = W.x + 18
+    ui.text(screen, "Надето", (ex, ty), COL_ACCENT, 14)
+    for i, (slot, label) in enumerate(EQUIP_SLOTS):
+        r = pygame.Rect(ex, gy + i * 61, SLOT, SLOT)
+        st = p.equip[slot]
+        pygame.draw.rect(screen, (44, 40, 30), r)
+        pygame.draw.rect(screen, (140, 124, 90) if ui.hovered(r) else (96, 86, 62), r, 1)
+        if st:
+            _draw_stack(screen, ui, st, r)
         else:
+            ui.text(screen, label, (r.centerx, r.centery - 8), (96, 88, 70), 11, center=True)
+        hits.append((r, "equip", slot))
+
+    # --- вещи игрока
+    gx = ex + SLOT + 20
+    items = sorted(p.items, key=inv.sort_key)
+    ui.text(screen, "Вещи (колесо — прокрутка)", (gx, ty), COL_ACCENT, 14)
+    pgrid = pygame.Rect(gx, gy, SLOT * 7, SLOT * 7)
+    hits += _grid(screen, ui, "inv", pgrid, [(st, st["id"]) for st in items], "player", game.sel_item)
+    lim = p.carry_limit()
+    wt = p.weight()
+    ui.bar(screen, (gx, pgrid.bottom + 6, pgrid.w - 4, 10), wt / lim if lim < 900 else 0,
+           COL_BAD if wt > lim else (150, 130, 80))
+    lim_text = "∞" if lim >= 900 else f"{lim:.0f}"
+    ui.text(screen, f"Вес: {wt:.1f} / {lim_text} кг", (gx, pgrid.bottom + 20), COL_TEXT_DIM, 13)
+
+    # --- правая панель: рядом (контейнер/земля) или каталог
+    rx = pgrid.right + 22
+    rw = W.right - 18 - rx
+    if not p.god and game.inv_tab == "catalog":
+        game.inv_tab = "near"
+    near_title, near = game.near_container()
+    if ui.button(screen, (rx, ty - 4, 200, 24), near_title, active=game.inv_tab == "near", size=13):
+        game.inv_tab = "near"
+    if p.god and ui.button(screen, (rx + 206, ty - 4, 200, 24), "Все предметы (бог)", active=game.inv_tab == "catalog", size=13):
+        game.inv_tab = "catalog"
+    rgrid = None
+    if game.inv_tab == "near":
+        rgrid = pygame.Rect(rx, gy, (rw // SLOT) * SLOT, SLOT * 6)
+        entries = [(st, st["id"]) for st in (near or [])]
+        hits += _grid(screen, ui, "near", rgrid, entries, "near", game.sel_item)
+        if not entries:
+            msg = "Пусто" if near is not None else "Перетащи сюда вещь, чтобы положить на землю"
+            ui.text(screen, msg, (rgrid.centerx, rgrid.centery - 8), COL_TEXT_DIM, 14, center=True)
+        if ui.button(screen, (rx, rgrid.bottom + 4, 180, 26), "Взять всё", enabled=bool(near), size=13):
+            for st in list(near):
+                actions.take_from(game, near, st)
+    else:
+        bx = rx
+        for cid, cname in CATEGORIES:
+            bw = ui.font(13).size(cname)[0] + 16
+            if ui.button(screen, (bx, gy, bw, 24), cname, active=game.cat_filter == cid, size=13):
+                game.cat_filter = cid
+                ui.scroll["cat"] = 0
+            bx += bw + 4
+        ids = [i for i in ITEMS if game.cat_filter == "all" or ITEMS[i]["type"] in CAT_TYPES[game.cat_filter]]
+        cgrid = pygame.Rect(rx, gy + 30, (rw // SLOT) * SLOT, SLOT * 6 - 24)
+        hits += _grid(screen, ui, "cat", cgrid, [(None, i) for i in ids], "cat")
+        ui.text(screen, "ЛКМ — взять 1 · Shift+ЛКМ или ПКМ — взять 10 · можно перетащить", (rx, cgrid.bottom + 6), COL_TEXT_DIM, 13)
+
+    # --- перетаскивание и клики
+    _inventory_mouse(screen, ui, game, hits, pgrid, rgrid, W)
+
+    # --- описание выбранного предмета и действия
+    _inventory_details(screen, ui, game, W)
+
+    # --- подсказка при наведении
+    if not (game.drag and game.drag["moved"]):
+        for r, kind, payload in hits:
+            if r.collidepoint(ui.mouse):
+                st, iid = _hit_item(game, kind, payload)
+                if iid:
+                    _tooltip(screen, ui, iid, st)
+                break
+
+
+def _hit_item(game, kind, payload):
+    """(стопка, id) предмета в ячейке."""
+    if kind == "equip":
+        st = game.player.equip[payload]
+        return st, (st["id"] if st else None)
+    return payload[0], payload[1]
+
+
+def _inventory_mouse(screen, ui, game, hits, pgrid, rgrid, W):
+    """Мышь в инвентаре: нажал на предмет — начал тащить; отпустил на месте — это клик."""
+    if ui.click and not game.drag:
+        for r, kind, payload in hits:
+            if r.collidepoint(ui.click) and _hit_item(game, kind, payload)[1]:
+                game.drag = {"kind": kind, "payload": payload, "start": ui.click, "moved": False, "shift": ui.shift}
+                ui.click = None
+                break
+    d = game.drag
+    if d and math.hypot(ui.mouse[0] - d["start"][0], ui.mouse[1] - d["start"][1]) > 6:
+        d["moved"] = True
+    if d and (ui.release or not pygame.mouse.get_pressed()[0]):
+        game.drag = None
+        pos = ui.release or ui.mouse
+        if not d["moved"]:
+            _inv_click(game, d)
+        else:
+            target = None
+            for r, kind, payload in hits:
+                if r.collidepoint(pos):
+                    target = kind if kind != "equip" else ("equip", payload)
+                    break
+            if target is None:
+                if pgrid.collidepoint(pos):
+                    target = "player"
+                elif rgrid is not None and rgrid.collidepoint(pos):
+                    target = "near"
+                elif not W.collidepoint(pos):
+                    target = "outside"
+            _inv_drop(game, d, target)
+    if ui.rclick:
+        for r, kind, payload in hits:
+            if r.collidepoint(ui.rclick):
+                _inv_click(game, {"kind": kind, "payload": payload, "shift": True}, quick=True)
+                break
+        ui.rclick = None
+    d = game.drag
+    if d and d["moved"]:
+        st, iid = _hit_item(game, d["kind"], d["payload"])
+        if iid:
+            screen.blit(icons.get(iid), (ui.mouse[0] - 20, ui.mouse[1] - 20))
+
+
+def _inv_click(game, d, quick=False):
+    """Клик без перетаскивания: выбрать. С Shift или ПКМ — быстро переложить/взять/использовать."""
+    kind, payload = d["kind"], d["payload"]
+    shift = d.get("shift")
+    _, near = game.near_container()
+    if kind == "cat":
+        game.give_item(payload[1], 10 if shift else 1)
+        return
+    if kind == "equip":
+        if shift:
+            actions.unequip(game, payload)
+        else:
+            game.sel_item, game.sel_from = game.player.equip[payload], "equip"
+        return
+    st = payload[0]
+    if not shift:
+        game.sel_item, game.sel_from = st, ("player" if kind == "player" else "container")
+        return
+    if kind == "player":
+        if game.container_items() is not None:
+            actions.put_into(game, game.container_items(), st)
+        elif quick:
             actions.quick_use(game, st)
+        else:
+            actions.drop(game, st)
+    elif kind == "near" and near is not None:
+        actions.take_from(game, near, st)
 
-    # --- средняя колонка: контейнер или экипировка
-    mx = lx + 336
-    if cont is not None:
-        ui.text(screen, game.container_title(), (mx, ly), COL_ACCENT, 15)
-        citems = list(cont)
-        rows = [(inv.label(st), COL_TEXT, st is game.sel_item) for st in citems]
-        if not rows:
-            rows = [("— пусто —", COL_TEXT_DIM)]
-        hit, rhit, _ = ui.scroll_list(screen, "cont", (mx, ly + 22, 300, 400), rows)
-        if citems and hit is not None:
-            game.sel_item = citems[hit]
-            game.sel_from = "container"
-        if citems and rhit is not None:
-            actions.take_from_container(game, citems[rhit], citems[rhit]["n"])
-        if ui.button(screen, (mx, ly + 430, 300, 30), "Взять всё (ПКМ — взять один предмет)", enabled=bool(citems), size=14):
-            actions.take_all(game)
-    else:
-        ui.text(screen, "Экипировка", (mx, ly), COL_ACCENT, 15)
-        slots = [("weapon", "В руках"), ("body", "Одежда"), ("head", "Голова"), ("face", "Лицо"),
-                 ("back", "Спина"), ("light", "Фонарь")]
-        for i, (slot, name) in enumerate(slots):
-            y = ly + 24 + i * 52
-            pygame.draw.rect(screen, COL_PANEL_DARK, (mx, y, 300, 46))
-            pygame.draw.rect(screen, (80, 72, 54), (mx, y, 300, 46), 1)
-            ui.text(screen, name, (mx + 8, y + 4), COL_TEXT_DIM, 13)
-            st = p.equip[slot]
-            ui.text(screen, inv.label(st) if st else "—", (mx + 8, y + 22), COL_TEXT, 14)
-            if st and ui.button(screen, (mx + 226, y + 10, 66, 26), "Снять", size=13):
-                actions.unequip(game, slot)
-        ui.text(screen, "ПКМ по предмету — быстрое действие", (mx, ly + 350), COL_TEXT_DIM, 13)
 
-    # --- правая колонка: описание и действия
-    rx = mx + 316
+def _inv_drop(game, d, target):
+    """Предмет отпустили над целью: переложить, надеть, выбросить."""
+    p = game.player
+    kind, payload = d["kind"], d["payload"]
+    _, near = game.near_container()
+    st, iid = _hit_item(game, kind, payload)
+    to_equip = target[1] if isinstance(target, tuple) else None
+    if kind == "cat":
+        if target in ("player", "near") or to_equip:
+            game.give_item(iid, 10 if d.get("shift") else 1)
+            if to_equip:
+                new = next((s for s in reversed(p.items) if s["id"] == iid), None)
+                if new and actions.fits_slot(iid, to_equip):
+                    actions.equip(game, new)
+        return
+    if kind == "player":
+        if to_equip:
+            if actions.fits_slot(iid, to_equip):
+                actions.equip(game, st)
+            else:
+                game.log("Сюда это не надеть.", "bad")
+        elif target == "near":
+            if game.container_items() is not None:
+                actions.put_into(game, game.container_items(), st)
+            else:
+                actions.drop(game, st)
+        elif target == "outside":
+            actions.drop(game, st)
+    elif kind == "near" and near is not None and st in near:
+        if target == "player" or to_equip:
+            actions.take_from(game, near, st)
+            if to_equip and actions.fits_slot(iid, to_equip) and st in p.items:
+                actions.equip(game, st)
+    elif kind == "equip":
+        slot = payload
+        if target == "player":
+            actions.unequip(game, slot)
+        elif target in ("near", "outside"):
+            actions.unequip(game, slot)
+            if st in p.items:
+                if target == "near" and game.container_items() is not None:
+                    actions.put_into(game, game.container_items(), st)
+                else:
+                    actions.drop(game, st)
+
+
+def _inventory_details(screen, ui, game, W):
+    """Нижняя часть окна: большая иконка, описание, характеристики и кнопки действий."""
+    p = game.player
+    top = W.y + 488
+    pygame.draw.line(screen, (90, 80, 60), (W.x + 16, top - 8), (W.right - 16, top - 8))
     st = game.sel_item
-    if st is not None and (st in p.items or (cont is not None and st in cont)):
-        it = ITEMS[st["id"]]
-        ui.rich(screen, [(it["name"], COL_ACCENT)], rx, ly, 280, 17)
-        h = ui.rich(screen, [(it.get("desc", ""), COL_TEXT)], rx, ly + 28, 280, 14)
-        info = _item_stats(it)
-        ui.rich(screen, [(info, COL_TEXT_DIM)], rx, ly + 34 + h, 280, 13)
-        by = ly + 250
-        for label, fn in actions.item_actions(game, st, game.sel_from):
-            if ui.button(screen, (rx, by, 280, 30), label, size=14):
-                fn()
-            by += 36
+    _, near = game.near_container()
+    valid = st is not None and (st in p.items or (near is not None and st in near) or st in p.equip.values())
+    if not valid:
+        game.sel_item = None
+        ui.text(screen, "Клик по предмету — описание и действия. Перетаскивай мышью: в слоты снаряжения, "
+                "в контейнер, за окно — выбросить.", (W.x + 20, top + 4), COL_TEXT_DIM, 13)
+        ui.text(screen, "ПКМ — быстрое действие (съесть, надеть, переложить). Shift+клик — переложить.",
+                (W.x + 20, top + 24), COL_TEXT_DIM, 13)
+        return
+    it = ITEMS[st["id"]]
+    box = pygame.Rect(W.x + 20, top, 64, 64)
+    pygame.draw.rect(screen, (38, 34, 27), box)
+    screen.blit(icons.get(st["id"], 56), (box.x + 4, box.y + 4))
+    tx = box.right + 14
+    ui.text(screen, inv.label(st), (tx, top - 2), COL_ACCENT, 17, bold=True)
+    h = ui.rich(screen, [(it.get("desc", ""), COL_TEXT)], tx, top + 24, 520, 14)
+    ui.rich(screen, [(_item_stats(it), COL_TEXT_DIM)], tx, top + 28 + h, 520, 13)
+    if game.sel_from == "equip":
+        slot = next(k for k, v in p.equip.items() if v is st)
+        acts = [("Снять", lambda: actions.unequip(game, slot))]
+        if it["type"] == "gun":
+            acts.append(("Зарядить [R]", lambda: actions.reload_gun(game)))
+    elif game.sel_from == "container":
+        acts = [("Взять", lambda: actions.take_from(game, near, st))] if near is not None else []
     else:
-        ui.rich(screen, [("Выбери предмет слева, чтобы увидеть описание и действия.", COL_TEXT_DIM)], rx, ly, 280, 14)
+        acts = actions.item_actions(game, st, "player")
+    bx, by = W.right - 380, top
+    for i, (label, fn) in enumerate(acts[:6]):
+        if ui.button(screen, (bx + (i % 2) * 184, by + (i // 2) * 36, 178, 30), label, size=13):
+            fn()
 
 
 def _item_stats(it):
@@ -415,10 +730,10 @@ def _item_stats(it):
 
 def draw_crafting(screen, ui, game):
     p = game.player
-    ui.panel(screen, WIN, "Крафт и ремесло")
+    ui.panel(screen, _win(), "Крафт и ремесло")
     _close_button(screen, ui, game)
     stations = crafting.stations_near(game)
-    lx, ly = WIN.x + 16, WIN.y + 44
+    lx, ly = _win().x + 16, _win().y + 44
     known = [r for r in RECIPES if r in p.known_recipes]
     if game.sel_recipe not in known and known:
         game.sel_recipe = known[0]
@@ -450,9 +765,9 @@ def draw_crafting(screen, ui, game):
 
 def draw_health(screen, ui, game):
     p = game.player
-    ui.panel(screen, WIN, "Здоровье")
+    ui.panel(screen, _win(), "Здоровье")
     _close_button(screen, ui, game)
-    lx, ly = WIN.x + 20, WIN.y + 48
+    lx, ly = _win().x + 20, _win().y + 48
     stats = [("Здоровье", f"{p.health:.0f} / 100"), ("Температура тела", f"{p.temp:.1f} °C"),
              ("Пыльная болезнь", f"{p.disease:.0f} / 100"), ("Отравление", f"{p.poison:.0f}"),
              ("Боль", f"{p.pain:.0f}" + (" (анальгин)" if p.painkiller > 0 else ""))]
@@ -465,8 +780,8 @@ def draw_health(screen, ui, game):
             if ui.button(screen, (lx, by, 300, 30), label, size=14):
                 actions.use_item(game, inv.find(p.items, med))
             by += 36
-    ui.text(screen, "Пыльная болезнь: кашель (15) → лихорадка (40) → бред (70) → смерть (100).", (lx, WIN.bottom - 70), COL_TEXT_DIM, 13)
-    ui.text(screen, "Защита — респиратор или противогаз, укрытие в помещении. Лечение — антидот, отвар колючки.", (lx, WIN.bottom - 50), COL_TEXT_DIM, 13)
+    ui.text(screen, "Пыльная болезнь: кашель (15) → лихорадка (40) → бред (70) → смерть (100).", (lx, _win().bottom - 70), COL_TEXT_DIM, 13)
+    ui.text(screen, "Защита — респиратор или противогаз, укрытие в помещении. Лечение — антидот, отвар колючки.", (lx, _win().bottom - 50), COL_TEXT_DIM, 13)
 
     rx = lx + 360
     ui.text(screen, "Раны", (rx, ly), COL_ACCENT, 17, bold=True)
@@ -499,13 +814,13 @@ def draw_health(screen, ui, game):
 
 def draw_journal(screen, ui, game):
     p = game.player
-    ui.panel(screen, WIN, "Журнал")
+    ui.panel(screen, _win(), "Журнал")
     _close_button(screen, ui, game)
     tabs = ["Задания", "Навыки", "Персонаж"]
     for i, t in enumerate(tabs):
-        if ui.button(screen, (WIN.x + 20 + i * 150, WIN.y + 44, 140, 28), t, active=ui.tab == i):
+        if ui.button(screen, (_win().x + 20 + i * 150, _win().y + 44, 140, 28), t, active=ui.tab == i):
             ui.tab = i
-    x, y = WIN.x + 24, WIN.y + 88
+    x, y = _win().x + 24, _win().y + 88
     if ui.tab == 0:
         active = [(q, s) for q, s in game.quests.items() if 0 < s < QUESTS[q]["final"]]
         done = [(q, s) for q, s in game.quests.items() if s >= QUESTS[q]["final"]]
@@ -539,9 +854,9 @@ def draw_journal(screen, ui, game):
 
 
 def draw_glossary(screen, ui, game):
-    ui.panel(screen, WIN, f"Словарик — казахский и узбекский ({len(game.glossary)} из {len(GLOSSARY)})")
+    ui.panel(screen, _win(), f"Словарик — казахский и узбекский ({len(game.glossary)} из {len(GLOSSARY)})")
     _close_button(screen, ui, game)
-    x0, y0 = WIN.x + 24, WIN.y + 50
+    x0, y0 = _win().x + 24, _win().y + 50
     for col, (lang, lname) in enumerate((("kk", "Қазақша — казахский"), ("uz", "O'zbekcha — узбекский"))):
         x = x0 + col * 470
         ui.text(screen, lname, (x, y0), COL_ACCENT, 17, bold=True)
@@ -555,12 +870,12 @@ def draw_glossary(screen, ui, game):
                 ui.text(screen, "· · ·", (x, y), (80, 74, 60), 15)
             y += 24
     ui.text(screen, "Слова запоминаются из разговоров, записок, радио и разговорника. Навык «Языки» помогает читать записки.",
-            (x0, WIN.bottom - 34), COL_TEXT_DIM, 13)
+            (x0, _win().bottom - 34), COL_TEXT_DIM, 13)
 
 
 def draw_dialogue(screen, ui, game):
     d = game.dialog
-    r = pygame.Rect(140, SCREEN_H - 380, SCREEN_W - 280, 340)
+    r = pygame.Rect(140, cfg.SCREEN_H - 380, cfg.SCREEN_W - 280, 340)
     ui.panel(screen, r, f"{d.npc.name} — {d.npc.data['title']}")
     h = ui.rich(screen, d.text, r.x + 24, r.y + 48, r.w - 48, 17)
     y = r.y + 60 + h
@@ -580,9 +895,9 @@ def draw_trade(screen, ui, game):
     p = game.player
     t = game.trade
     npc = t["npc"]
-    ui.panel(screen, WIN, f"Обмен — {npc.name}")
+    ui.panel(screen, _win(), f"Обмен — {npc.name}")
     _close_button(screen, ui, game)
-    lx, ly = WIN.x + 16, WIN.y + 44
+    lx, ly = _win().x + 16, _win().y + 44
     sell_k, buy_k = actions.trade_prices(game)
     ui.text(screen, "Твои вещи (ЛКМ — предложить, ПКМ — убрать)", (lx, ly), COL_TEXT_DIM, 13)
     mine = sorted([st for st in p.items if not ITEMS[st["id"]].get("quest_item")], key=inv.sort_key)
@@ -618,14 +933,14 @@ def draw_trade(screen, ui, game):
     ok = give_v >= take_v and take_v > 0
     ui.text(screen, f"Ты даёшь: {give_v}     Ты получаешь: {take_v}", (lx, ly + 414), COL_GREEN if ok else COL_TEXT, 17, bold=True)
     ui.text(screen, "Цены зависят от навыка «Торговля» и отношения колхоза. Деньги почти ничего не стоят — меняйся.", (lx, ly + 442), COL_TEXT_DIM, 13)
-    if ui.button(screen, (WIN.right - 220, WIN.bottom - 56, 200, 36), "Обменять", enabled=ok):
+    if ui.button(screen, (_win().right - 220, _win().bottom - 56, 200, 36), "Обменять", enabled=ok):
         actions.do_trade(game)
 
 
 def draw_note(screen, ui, game):
     st = game.note_stack
     it = ITEMS[st["id"]]
-    r = pygame.Rect(290, 90, 700, 480)
+    r = _win(700, 480)
     ui.panel(screen, r, it["name"])
     _close_button(screen, ui, game, r)
     pygame.draw.rect(screen, (214, 204, 176), (r.x + 20, r.y + 46, r.w - 40, r.h - 70))
@@ -641,7 +956,7 @@ def draw_note(screen, ui, game):
 
 
 def draw_radio(screen, ui, game):
-    r = pygame.Rect(300, 120, 680, 380)
+    r = _win(680, 380)
     ui.panel(screen, r, "Радиоприёмник «Океан»")
     _close_button(screen, ui, game, r)
     st, text = game.radio_current()
@@ -675,13 +990,15 @@ HELP_LINES = [
     ("J", "журнал: задания, навыки, персонаж"),
     ("G", "словарик казахских и узбекских слов"),
     ("M", "звук вкл/выкл"),
-    ("F11", "полноэкранный режим"),
-    ("Esc", "пауза, сохранение"),
+    ("F10", "режим бога: бессмертие, враги не замечают, каталог предметов в инвентаре"),
+    ("` (Ё)", "консоль команд (help — список)"),
+    ("F11", "полноэкранный режим (остальное — Esc → Настройки)"),
+    ("Esc", "пауза, сохранение, настройки"),
 ]
 
 
 def draw_help(screen, ui, game):
-    r = pygame.Rect(240, 70, 800, 560)
+    r = _win(800, 600)
     ui.panel(screen, r, "Управление")
     _close_button(screen, ui, game, r)
     for i, (k, v) in enumerate(HELP_LINES):
@@ -691,16 +1008,153 @@ def draw_help(screen, ui, game):
             r.x + 30, r.bottom - 66, r.w - 60, 14)
 
 
+def draw_settings(screen, ui, game):
+    """Окно настроек: видео (разрешение, режим, масштаб, vsync, FPS, яркость), звук, игра."""
+    st = game.settings
+    pv = game.pending_video
+    W = _win(780, 560)
+    ui.panel(screen, W, "Настройки")
+    _close_button(screen, ui, game, W)
+    tabs = ["Изображение", "Звук", "Игра"]
+    for i, t in enumerate(tabs):
+        if ui.button(screen, (W.x + 20 + i * 160, W.y + 44, 150, 28), t, active=game.settings_tab == i):
+            game.settings_tab = i
+    x, y = W.x + 30, W.y + 96
+    lw = 250                      # ширина подписи
+    cx, cw = x + lw, 360          # колонка элементов управления
+    changed = False
+
+    def row(label, yy):
+        ui.text(screen, label, (x, yy + 6), COL_TEXT, 15)
+
+    if game.settings_tab == 0:
+        res_list = settings_mod.available_resolutions()
+        cur = tuple(pv["resolution"])
+        if cur not in res_list:
+            res_list = sorted(res_list + [cur])
+        row("Разрешение", y)
+        d = ui.selector(screen, (cx, y, cw, 30), f"{cur[0]} × {cur[1]}")
+        if d:
+            pv["resolution"] = list(res_list[(res_list.index(cur) + d) % len(res_list)])
+        y += 42
+        modes = settings_mod.DISPLAY_MODES
+        mi = [m[0] for m in modes].index(pv["display"])
+        row("Режим экрана", y)
+        d = ui.selector(screen, (cx, y, cw, 30), modes[mi][1])
+        if d:
+            pv["display"] = modes[(mi + d) % len(modes)][0]
+        y += 42
+        sc = settings_mod.SCALES
+        row("Масштаб изображения", y)
+        d = ui.selector(screen, (cx, y, cw, 30), f"{pv['scale']}%")
+        if d:
+            pv["scale"] = sc[(sc.index(pv["scale"]) + d) % len(sc)]
+        y += 42
+        pv["vsync"] = ui.checkbox(screen, (x, y, 400, 30), "Вертикальная синхронизация (без разрывов кадра)", pv["vsync"])
+        y += 40
+        dirty = any(pv[k] != st[k] for k in pv)
+        if ui.button(screen, (cx, y, 170, 32), "Применить", enabled=dirty):
+            for k in pv:
+                st[k] = pv[k]
+            game.apply_video()
+            changed = True
+        if dirty:
+            ui.text(screen, "← нажми, чтобы применить", (cx + 180, y + 7), COL_ACCENT, 13)
+        y += 50
+        pygame.draw.line(screen, (90, 80, 60), (x, y - 8), (W.right - 30, y - 8))
+        fl = settings_mod.FPS_LIMITS
+        row("Ограничение FPS", y)
+        d = ui.selector(screen, (cx, y, cw, 30), "без ограничения" if st["fps_limit"] == 0 else str(st["fps_limit"]))
+        if d:
+            st["fps_limit"] = fl[(fl.index(st["fps_limit"]) + d) % len(fl)]
+            changed = True
+        y += 44
+        row(f"Яркость: {st['brightness']}%", y)
+        v = ui.slider(screen, "bright", (cx, y + 10, cw, 10), st["brightness"], 50, 150)
+        if v != st["brightness"]:
+            st["brightness"] = v
+            changed = True
+        y += 40
+        old = st["show_fps"]
+        st["show_fps"] = ui.checkbox(screen, (x, y, 300, 30), "Показывать счётчик FPS", st["show_fps"])
+        changed |= old != st["show_fps"]
+        y += 40
+        ui.text(screen, f"Сейчас игра рисуется в {cfg.SCREEN_W}×{cfg.SCREEN_H}. Масштаб 150–200% — для мониторов 2K/4K: "
+                "картинка крупнее.", (x, W.bottom - 40), COL_TEXT_DIM, 13)
+    elif game.settings_tab == 1:
+        for key, label in (("master", "Общая громкость"), ("sfx", "Эффекты (удары, выстрелы)"),
+                           ("ambient", "Фон (ветер)"), ("music", "Музыка (домбра)")):
+            row(f"{label}: {st[key]}%", y)
+            v = ui.slider(screen, key, (cx + 40, y + 10, cw - 40, 10), st[key])
+            if v != st[key]:
+                st[key] = v
+                changed = True
+                game.sound.update_volumes()
+            y += 50
+        old = st["muted"]
+        st["muted"] = ui.checkbox(screen, (x, y, 300, 30), "Выключить весь звук (M)", st["muted"])
+        if old != st["muted"]:
+            st["muted"] = old
+            game.sound.toggle_mute()
+        y += 50
+        if ui.button(screen, (x, y, 220, 32), "Проверить звук"):
+            game.sound.play("hit")
+            game.sound.play_music()
+    else:
+        ts = settings_mod.TIME_SPEEDS
+        row("Скорость времени", y)
+        speed = st["time_speed"]
+        day_min = int(24 / speed)
+        d = ui.selector(screen, (cx, y, cw, 30), f"{speed:g}×  (сутки — {day_min} мин)")
+        if d:
+            st["time_speed"] = ts[(ts.index(speed) + d) % len(ts)]
+            changed = True
+        y += 48
+        old = st["hints"]
+        st["hints"] = ui.checkbox(screen, (x, y, 400, 30), "Подсказки действий («[E] Обыскать» и т.п.)", st["hints"])
+        changed |= old != st["hints"]
+        y += 60
+        ui.text(screen, "Режим бога — F10 или кнопка в меню паузы. Консоль — клавиша ` (Ё).", (x, y), COL_TEXT_DIM, 14)
+        y += 50
+        if ui.button(screen, (x, y, 260, 32), "Сбросить все настройки"):
+            st.reset()
+            game.pending_video = {k: st[k] for k in ("resolution", "display", "scale", "vsync")}
+            game.apply_video()
+            game.sound.update_volumes()
+            changed = True
+    if changed:
+        st.save()
+
+
+def draw_console(screen, ui, game):
+    """Консоль разработчика (клавиша ` / Ё): ввод команд и вывод."""
+    c = game.console
+    h = int(cfg.SCREEN_H * 0.45)
+    back = pygame.Surface((cfg.SCREEN_W, h), pygame.SRCALPHA)
+    back.fill((10, 10, 8, 225))
+    screen.blit(back, (0, 0))
+    pygame.draw.line(screen, COL_ACCENT, (0, h), (cfg.SCREEN_W, h), 2)
+    f = ui.font(15)
+    line_h = 20
+    max_lines = (h - 44) // line_h
+    for i, (text, col) in enumerate(c.lines[-max_lines:]):
+        screen.blit(f.render(text, True, col), (12, 8 + i * line_h))
+    cursor = "_" if int(game.time_real * 2) % 2 else " "
+    ui.text(screen, "> " + c.text + cursor, (12, h - 30), (255, 230, 160), 16)
+    ui.text(screen, "help — список команд · Esc/` — закрыть", (cfg.SCREEN_W - 12, h - 28), COL_TEXT_DIM, 13, right=True)
+
+
 def draw_pause(screen, ui, game):
-    r = pygame.Rect(SCREEN_W // 2 - 170, 150, 340, 400)
+    r = pygame.Rect(cfg.SCREEN_W // 2 - 170, cfg.SCREEN_H // 2 - 250, 340, 500)
     ui.panel(screen, r, "Пауза")
     y = r.y + 54
     hard = game.player.mode == "hard"
     items = [("Продолжить", game.close_window, True),
              ("Сохранить игру", game.save_game, not hard),
              ("Загрузить", game.load_game, save.exists()),
+             ("Настройки", lambda: game.open_settings("pause"), True),
              ("Управление", lambda: game.open_window("help"), True),
-             ("Звук: " + ("выкл" if game.sound.muted else "вкл"), game.sound.toggle_mute, True),
+             ("Режим бога: " + ("ВКЛ" if game.player.god else "выкл") + "  (F10)", game.toggle_god, True),
              ("В главное меню", game.to_menu, True),
              ("Выйти из игры", game.quit, True)]
     for label, fn, en in items:
@@ -713,10 +1167,10 @@ def draw_pause(screen, ui, game):
 
 
 def draw_chapter(screen, ui, game):
-    shade = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    shade = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
     shade.fill((10, 8, 6, 200))
     screen.blit(shade, (0, 0))
-    ui.text(screen, "АКТ II «КОЛОДЕЦ» ЗАВЕРШЁН", (SCREEN_W // 2, 200), COL_ACCENT, 34, bold=True, center=True)
+    ui.text(screen, "АКТ II «КОЛОДЕЦ» ЗАВЕРШЁН", (cfg.SCREEN_W // 2, 200), COL_ACCENT, 34, bold=True, center=True)
     lines = [
         "Ты узнал правду: колодцы отравил бункер «Подземка», а источник беды —",
         "закрытый объект «Мелиорация-7» у самой границы.",
@@ -725,62 +1179,68 @@ def draw_chapter(screen, ui, game):
         "А пока степь ждёт: выживай, обустраивай базу, помогай «Заре».",
     ]
     for i, l in enumerate(lines):
-        ui.text(screen, l, (SCREEN_W // 2, 280 + i * 30), COL_TEXT, 18, center=True)
-    if ui.button(screen, (SCREEN_W // 2 - 140, 480, 280, 42), "Продолжить выживать"):
+        ui.text(screen, l, (cfg.SCREEN_W // 2, 280 + i * 30), COL_TEXT, 18, center=True)
+    if ui.button(screen, (cfg.SCREEN_W // 2 - 140, 480, 280, 42), "Продолжить выживать"):
         game.close_window()
 
 
 # ====================================================================== экраны вне игры
 
 def _menu_background(screen, t):
-    """Степь на закате: пыльное небо, солнце, столбы ЛЭП и юрта на горизонте."""
-    for y in range(SCREEN_H):
-        k = y / SCREEN_H
-        col = (int(196 - 120 * k), int(150 - 100 * k), int(80 - 50 * k)) if y < 470 else (int(70 - 20 * k), int(58 - 18 * k), int(40 - 12 * k))
-        pygame.draw.line(screen, col, (0, y), (SCREEN_W, y))
-    pygame.draw.circle(screen, (236, 190, 110), (930, 380), 70)
-    pygame.draw.rect(screen, (60, 48, 34), (0, 470, SCREEN_W, SCREEN_H - 470))
-    for i in range(9):
-        x = (i * 170 - t * 12) % (SCREEN_W + 200) - 100
-        pygame.draw.line(screen, (40, 30, 22), (x, 470), (x, 360), 4)
-        pygame.draw.line(screen, (40, 30, 22), (x - 20, 372), (x + 20, 372), 3)
-        if i < 8:
-            nx = x + 170
-            for k in range(3):
-                pts = [(x - 16 + 16 * k + (nx - x) * s / 10, 374 + 18 * math.sin(math.pi * s / 10)) for s in range(11)]
-                pygame.draw.lines(screen, (40, 30, 22), False, pts, 1)
-    pygame.draw.ellipse(screen, (46, 36, 26), (180, 400, 120, 90))    # купол юрты
-    pygame.draw.rect(screen, (46, 36, 26), (180, 440, 120, 32))
-    pygame.draw.rect(screen, (46, 36, 26), (330, 400, 90, 70))   # панелька рядом с юртой
+    """Степь на закате: пыльное небо, солнце, столбы ЛЭП и юрта на горизонте.
+    Координаты считаются от размеров экрана, чтобы фон подходил под любое разрешение."""
+    W, H = cfg.SCREEN_W, cfg.SCREEN_H
+    hz = int(H * 0.653)          # линия горизонта
+    for y in range(H):
+        k = y / H
+        col = (int(196 - 120 * k), int(150 - 100 * k), int(80 - 50 * k)) if y < hz else (int(70 - 20 * k), int(58 - 18 * k), int(40 - 12 * k))
+        pygame.draw.line(screen, col, (0, y), (W, y))
+    pygame.draw.circle(screen, (236, 190, 110), (int(W * 0.73), hz - 90), 70)
+    pygame.draw.rect(screen, (60, 48, 34), (0, hz, W, H - hz))
+    n = W // 170 + 3
+    for i in range(n):
+        x = (i * 170 - t * 12) % (n * 170) - 100
+        pygame.draw.line(screen, (40, 30, 22), (x, hz), (x, hz - 110), 4)
+        pygame.draw.line(screen, (40, 30, 22), (x - 20, hz - 98), (x + 20, hz - 98), 3)
+        nx = x + 170
+        for k in range(3):
+            pts = [(x - 16 + 16 * k + (nx - x) * s / 10, hz - 96 + 18 * math.sin(math.pi * s / 10)) for s in range(11)]
+            pygame.draw.lines(screen, (40, 30, 22), False, pts, 1)
+    pygame.draw.ellipse(screen, (46, 36, 26), (180, hz - 70, 120, 90))    # купол юрты
+    pygame.draw.rect(screen, (46, 36, 26), (180, hz - 30, 120, 32))
+    pygame.draw.rect(screen, (46, 36, 26), (330, hz - 70, 90, 70))        # панелька рядом с юртой
     for k in range(3):
         for j in range(2):
-            pygame.draw.rect(screen, (90, 70, 40), (342 + k * 26, 412 + j * 26, 12, 14))
+            pygame.draw.rect(screen, (90, 70, 40), (342 + k * 26, hz - 58 + j * 26, 12, 14))
 
 
 def draw_main_menu(screen, ui, game):
     _menu_background(screen, game.time_real)
-    ui.text(screen, "ГРАНИЦА-99", (SCREEN_W // 2, 70), (40, 28, 18), 72, bold=True, center=True)
-    ui.text(screen, "ГРАНИЦА-99", (SCREEN_W // 2 - 3, 67), (230, 200, 140), 72, bold=True, center=True)
-    ui.text(screen, "Юг Казахстана, 1999 год. Степь, пыль и выбор.", (SCREEN_W // 2, 160), (250, 230, 190), 20, center=True)
-    r = pygame.Rect(SCREEN_W // 2 - 160, 220, 320, 300)
+    ui.text(screen, "ГРАНИЦА-99", (cfg.SCREEN_W // 2, 70), (40, 28, 18), 72, bold=True, center=True)
+    ui.text(screen, "ГРАНИЦА-99", (cfg.SCREEN_W // 2 - 3, 67), (230, 200, 140), 72, bold=True, center=True)
+    ui.text(screen, "Юг Казахстана, 1999 год. Степь, пыль и выбор.", (cfg.SCREEN_W // 2, 160), (250, 230, 190), 20, center=True)
+    r = pygame.Rect(cfg.SCREEN_W // 2 - 160, 220, 320, 300)
     y = r.y
     items = [("Продолжить", game.load_game, save.exists()),
              ("Новая игра", game.to_creation, True),
+             ("Настройки", lambda: game.open_settings(None), True),
              ("Управление", lambda: game.open_window("help"), True),
              ("Выход", game.quit, True)]
     for label, fn, en in items:
-        if ui.button(screen, (r.x, y, r.w, 42), label, enabled=en, size=18):
+        if ui.button(screen, (r.x, y, r.w, 42), label, enabled=en and not game.window, size=18):
             fn()
             return
         y += 54
-    ui.text(screen, f"Версия {VERSION} · вся графика и звук созданы кодом · см. CREDITS.md", (SCREEN_W // 2, SCREEN_H - 30), (200, 180, 140), 13, center=True)
+    ui.text(screen, f"Версия {VERSION} · вся графика и звук созданы кодом · см. CREDITS.md", (cfg.SCREEN_W // 2, cfg.SCREEN_H - 30), (200, 180, 140), 13, center=True)
     if game.window == "help":
         draw_help(screen, ui, game)
+    elif game.window == "settings":
+        draw_settings(screen, ui, game)
 
 
 def draw_creation(screen, ui, game):
     _menu_background(screen, game.time_real)
-    r = pygame.Rect(90, 40, SCREEN_W - 180, SCREEN_H - 80)
+    r = pygame.Rect(90, 40, cfg.SCREEN_W - 180, cfg.SCREEN_H - 80)
     ui.panel(screen, r, "Новый персонаж")
     c = game.creation
     x, y = r.x + 24, r.y + 52
@@ -822,22 +1282,22 @@ def draw_creation(screen, ui, game):
 
 
 def draw_death(screen, ui, game):
-    shade = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    shade = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
     shade.fill((20, 4, 4, 210))
     screen.blit(shade, (0, 0))
     p = game.player
     days = game.clock.day - 1
-    ui.text(screen, "ВЫ ПОГИБЛИ", (SCREEN_W // 2, 170), COL_RED, 48, bold=True, center=True)
-    ui.text(screen, f"{p.name} прожил(а) в степи {days} {_days_word(days)}.", (SCREEN_W // 2, 250), COL_TEXT, 22, center=True)
-    ui.text(screen, game.death_cause, (SCREEN_W // 2, 290), COL_TEXT_DIM, 17, center=True)
+    ui.text(screen, "ВЫ ПОГИБЛИ", (cfg.SCREEN_W // 2, 170), COL_RED, 48, bold=True, center=True)
+    ui.text(screen, f"{p.name} прожил(а) в степи {days} {_days_word(days)}.", (cfg.SCREEN_W // 2, 250), COL_TEXT, 22, center=True)
+    ui.text(screen, game.death_cause, (cfg.SCREEN_W // 2, 290), COL_TEXT_DIM, 17, center=True)
     ui.text(screen, f"Убито врагов: {p.kills} · Слов в словарике: {len(game.glossary)} · Заданий выполнено: {game.quests_done()}",
-            (SCREEN_W // 2, 330), COL_TEXT_DIM, 16, center=True)
-    if ui.button(screen, (SCREEN_W // 2 - 150, 400, 300, 42), "Новый персонаж", size=17):
+            (cfg.SCREEN_W // 2, 330), COL_TEXT_DIM, 16, center=True)
+    if ui.button(screen, (cfg.SCREEN_W // 2 - 150, 400, 300, 42), "Новый персонаж", size=17):
         game.to_creation()
     if save.exists() and p.mode != "hard":
-        if ui.button(screen, (SCREEN_W // 2 - 150, 452, 300, 42), "Загрузить сохранение", size=17):
+        if ui.button(screen, (cfg.SCREEN_W // 2 - 150, 452, 300, 42), "Загрузить сохранение", size=17):
             game.load_game()
-    if ui.button(screen, (SCREEN_W // 2 - 150, 504, 300, 42), "Главное меню", size=17):
+    if ui.button(screen, (cfg.SCREEN_W // 2 - 150, 504, 300, 42), "Главное меню", size=17):
         game.to_menu()
 
 

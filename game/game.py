@@ -7,7 +7,8 @@ import random
 
 import pygame
 
-from .config import SCREEN_W, SCREEN_H, FPS, TITLE, GAME_MIN_PER_SEC, COL_BG
+from .config import TITLE, COL_BG
+from . import config as cfg
 from .data import ITEMS, OBJECTS, RECIPES, NPCS, QUESTS, RADIO, GLOSSARY
 from .iso import Camera, to_screen, to_tile, screen_dir_to_tile
 from .player import Player
@@ -16,9 +17,11 @@ from .localization import parse_markup
 from . import worldgen, physics, art, render, ui as uimod, actions, crafting, save, ai, inventory as inv
 from .dialogue import Dialogue, apply
 from .sound import SoundSystem
+from .settings import Settings, apply_display
+from .console import Console
 
 # окна, во время которых время в мире стоит
-PAUSING_WINDOWS = {"pause", "help", "dialogue", "trade", "note", "chapter"}
+PAUSING_WINDOWS = {"pause", "help", "dialogue", "trade", "note", "chapter", "settings", "console"}
 INTERACTIVE = ("door", "window", "container", "water", "chop", "pick", "bed", "fire",
                "workbench", "collector", "hatch", "ladder", "alarm")
 
@@ -29,11 +32,16 @@ class Game:
         pygame.init()
         pygame.display.set_caption(TITLE)
         pygame.display.set_icon(self._make_icon())
-        self.screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.SCALED | pygame.RESIZABLE)
+        self.settings = Settings()
+        self.screen = apply_display(self.settings)
+        self.pending_video = {k: self.settings[k] for k in ("resolution", "display", "scale", "vsync")}
+        self.settings_tab = 0
+        self.settings_return = None
         self.clock_fps = pygame.time.Clock()
         art.build()
         self.ui = uimod.UI()
-        self.sound = SoundSystem()
+        self.sound = SoundSystem(self.settings)
+        self.console = Console()
         self.state = "menu"
         self.window = None
         self.running = True
@@ -91,6 +99,9 @@ class Game:
         self.spot_cd = 0.0
         self.alarm_cd = {}
         self.step_acc = 0.0
+        self.drag = None          # предмет, который тащат мышью в инвентаре
+        self.inv_tab = "near"     # правая панель инвентаря: "near" или "catalog"
+        self.cat_filter = "all"
 
     @property
     def enemies(self):
@@ -107,14 +118,17 @@ class Game:
     # ================================================================ запуск
     def run(self):
         while self.running:
-            dt = min(0.05, self.clock_fps.tick(FPS) / 1000.0)
+            dt = min(0.05, self.clock_fps.tick(self.settings["fps_limit"]) / 1000.0)
             self.time_real += dt
             events = pygame.event.get()
             for e in events:
                 if e.type == pygame.QUIT:
                     self.running = False
                 elif e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
-                    pygame.display.toggle_fullscreen()
+                    self.settings["display"] = "window" if self.settings["display"] == "fullscreen" else "fullscreen"
+                    self.pending_video["display"] = self.settings["display"]
+                    self.apply_video()
+                    self.settings.save()
             self.ui.begin(events)
             self.screen.fill(COL_BG)
             if self.state == "menu":
@@ -139,6 +153,19 @@ class Game:
         for e in events:
             if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE and self.window:
                 self.window = None
+
+    # ================================================================ настройки
+    def open_settings(self, ret):
+        """Открыть настройки. ret — куда вернуться после закрытия (например, в меню паузы)."""
+        self.pending_video = {k: self.settings[k] for k in ("resolution", "display", "scale", "vsync")}
+        self.settings_return = ret
+        self.window = "settings"
+
+    def apply_video(self):
+        """Пересоздать окно с новым разрешением/режимом и поставить камеру на место."""
+        self.screen = apply_display(self.settings)
+        if self.state in ("play", "dead"):
+            self.cam.snap(self.player.x, self.player.y)
 
     def _creation_events(self, events):
         c = self.creation
@@ -183,10 +210,20 @@ class Game:
     # ================================================================ ввод в игре
     def _play_events(self, events):
         p = self.player
+        if self.window == "console":
+            self._console_events(events)
+            return
         for e in events:
             if e.type != pygame.KEYDOWN:
                 continue
             k = e.key
+            if self._is_console_key(e) and self.window in (None, "inventory"):
+                self.window = "console"
+                self.console.skip_char = True
+                continue
+            if k == pygame.K_F10:
+                self.toggle_god()
+                continue
             if k == pygame.K_ESCAPE:
                 if self.window:
                     self.close_window()
@@ -229,6 +266,55 @@ class Game:
                 p.sneaking = not p.sneaking
                 self.log("Крадёшься тихо." if p.sneaking else "Идёшь обычным шагом.", "info")
 
+    @staticmethod
+    def _is_console_key(e):
+        """Клавиша консоли: ` в английской раскладке, Ё — в русской."""
+        return e.key == pygame.K_BACKQUOTE or e.scancode == pygame.KSCAN_GRAVE or e.unicode in ("`", "ё", "Ё", "~")
+
+    def _console_events(self, events):
+        c = self.console
+        for e in events:
+            if e.type == pygame.TEXTINPUT:
+                if c.skip_char and e.text in "`ёЁ~":
+                    c.skip_char = False
+                    continue
+                c.skip_char = False
+                c.text += e.text
+            elif e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_ESCAPE or self._is_console_key(e):
+                    self.window = None
+                    return
+                if e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    c.submit(self)
+                elif e.key == pygame.K_BACKSPACE:
+                    c.text = c.text[:-1]
+                elif e.key == pygame.K_UP:
+                    c.history_step(-1)
+                elif e.key == pygame.K_DOWN:
+                    c.history_step(1)
+
+    # ================================================================ режим бога
+    def toggle_god(self):
+        """Режим бога: тебя нельзя убить, враги не замечают, в инвентаре — каталог всех предметов."""
+        p = self.player
+        p.god = not p.god
+        if p.god:
+            for e in self.enemies:
+                if e.state in ("chase", "investigate", "search"):
+                    e.state, e.target, e.path = "idle", None, []
+            self.inv_tab = "catalog"
+            self.log("РЕЖИМ БОГА включён: бессмертие, враги не замечают. Все предметы — в инвентаре (I).", "quest")
+        else:
+            self.inv_tab = "near"
+            self.log("Режим бога выключен.", "info")
+
+    def give_item(self, iid, n=1):
+        """Выдать предмет (каталог режима бога и консоль). Как будто подобрал его."""
+        inv.add(self.player.items, iid, n)
+        for e in ITEMS[iid].get("on_pickup", []):
+            apply(self, e)
+        self.sound.play("pickup")
+
     # ================================================================ окна
     def open_window(self, name):
         self.window = name
@@ -236,6 +322,11 @@ class Game:
             self.sel_item = None
 
     def close_window(self):
+        self.drag = None
+        if self.window == "settings":
+            self.window = self.settings_return
+            self.settings_return = None
+            return
         if self.window == "inventory" and self.container_key:
             self._cleanup_pile(self.container_key)
             self.container_key = None
@@ -261,6 +352,32 @@ class Game:
             self.container_key = None
             return None
         return self.zone.containers[key]["items"]
+
+    def nearby_pile_key(self):
+        """Ключ кучи вещей / обысканного тела рядом с игроком (или None)."""
+        p = self.player
+        best = None
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                x, y = int(p.x) + dx, int(p.y) + dy
+                key = f"{x},{y}"
+                c = self.zone.containers.get(key)
+                if c and c["items"] is not None and OBJECTS.get(self.zone.get(x, y), {}).get("temp"):
+                    d = abs(dx) + abs(dy)
+                    if best is None or d < best[0]:
+                        best = (d, key)
+        return best[1] if best else None
+
+    def near_container(self):
+        """(название, список предметов) для правой панели инвентаря:
+        открытый контейнер или вещи на земле рядом. Если ничего нет — список None."""
+        items = self.container_items()
+        if items is not None:
+            return self.container_title(), items
+        key = self.nearby_pile_key()
+        if key:
+            return "На земле", self.zone.containers[key]["items"]
+        return "На земле", None
 
     def container_title(self):
         x, y = map(int, self.container_key.split(","))
@@ -397,6 +514,8 @@ class Game:
 
     def noise(self, x, y, radius, source=None):
         """Звук в мире: все враги в радиусе идут проверить (концепт 7.7)."""
+        if source is None and self.player.god:
+            return
         for e in self.enemies:
             if e is not source and math.hypot(e.x - x, e.y - y) <= radius:
                 e.hear(x, y)
@@ -721,7 +840,7 @@ class Game:
         if self.window in PAUSING_WINDOWS:
             return
 
-        mins = dt * GAME_MIN_PER_SEC * (60 if p.sleeping else 1)
+        mins = dt * self.settings["time_speed"] * (60 if p.sleeping else 1)
         mx, my = self.ui.mouse
         mtx, mty = to_tile(mx, my, self.cam)
         self.hover_tile = (int(mtx), int(mty)) if not self.window else None
@@ -742,7 +861,13 @@ class Game:
             p.running = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and p.fatigue < 92 and not p.sneaking
             speed = (4.2 if p.running else (1.5 if p.sneaking else 2.6)) * p.speed_mult()
             ox, oy = p.x, p.y
-            physics.move(p, dx * speed * dt, dy * speed * dt, 0.3, self.zone.solid)
+            if p.noclip:
+                speed *= 2
+                nx, ny = p.x + dx * speed * dt, p.y + dy * speed * dt
+                if self.zone.inside(int(nx), int(ny)):
+                    p.x, p.y = nx, ny
+            else:
+                physics.move(p, dx * speed * dt, dy * speed * dt, 0.3, self.zone.solid)
             moved = math.hypot(p.x - ox, p.y - oy)
             if moved > 0:
                 p.moving = True
@@ -785,7 +910,12 @@ class Game:
                "hot": self.clock.air_temp() > 30 and self.darkness() < 0.3 and not self.zone.dark,
                "indoor": indoor, "near_fire": near_fire,
                "dust": self.clock.dust_exposure(indoor), "bed": getattr(p, "sleep_bed", False)}
-        p.update_needs(mins, env, self.log)
+        if p.god:
+            # в режиме бога потребности не растут, болезни и раны исчезают
+            p.health, p.disease, p.poison, p.pain, p.temp = 100, 0, 0, 0, 36.6
+            p.wounds.clear()
+        else:
+            p.update_needs(mins, env, self.log)
         if p.has_light():
             p.equip["light"]["battery"] -= mins
             if p.equip["light"]["battery"] <= 0:
@@ -891,12 +1021,13 @@ class Game:
     # ================================================================ отрисовка
     def draw_play(self):
         render.draw_world(self.screen, self)
+        self._apply_brightness()
         p = self.player
         if p.sleeping:
-            s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            s = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
             s.fill((0, 0, 0, 170))
             self.screen.blit(s, (0, 0))
-            self.ui.text(self.screen, "Сон... (" + self.clock.clock_text() + ")", (SCREEN_W // 2, SCREEN_H // 2 - 20), (220, 210, 180), 26, center=True)
+            self.ui.text(self.screen, "Сон... (" + self.clock.clock_text() + ")", (cfg.SCREEN_W // 2, cfg.SCREEN_H // 2 - 20), (220, 210, 180), 26, center=True)
         if self.state == "dead":
             uimod.draw_death(self.screen, self.ui, self)
             return
@@ -905,7 +1036,8 @@ class Game:
         draw = {"inventory": uimod.draw_inventory, "craft": uimod.draw_crafting, "health": uimod.draw_health,
                 "journal": uimod.draw_journal, "glossary": uimod.draw_glossary, "dialogue": uimod.draw_dialogue,
                 "trade": uimod.draw_trade, "note": uimod.draw_note, "radio": uimod.draw_radio, "help": uimod.draw_help,
-                "pause": uimod.draw_pause, "chapter": uimod.draw_chapter}.get(w)
+                "pause": uimod.draw_pause, "chapter": uimod.draw_chapter,
+                "settings": uimod.draw_settings, "console": uimod.draw_console}.get(w)
         if draw:
             if w == "dialogue" and not self.dialog:
                 self.window = None
@@ -920,6 +1052,17 @@ class Game:
             self.world_click = True
         if self.ui.rclick and not self.window and self.target:
             self.do_interact()
+
+    def _apply_brightness(self):
+        """Яркость из настроек: затемняем или осветляем картинку мира (интерфейс не трогаем)."""
+        b = self.settings["brightness"]
+        if b < 100:
+            shade = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
+            shade.fill((0, 0, 0, int((100 - b) * 2.2)))
+            self.screen.blit(shade, (0, 0))
+        elif b > 100:
+            v = int((b - 100) * 0.7)
+            self.screen.fill((v, v, v), special_flags=pygame.BLEND_RGB_ADD)
 
     # ================================================================ сохранение
     def save_game(self, auto=False):

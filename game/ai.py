@@ -66,6 +66,8 @@ class Enemy:
     # ---------------------------------------------------- восприятие
     def can_see(self, game):
         p = game.player
+        if p.god:
+            return False          # режим бога: игрока никто не замечает
         dist = math.hypot(p.x - self.x, p.y - self.y)
         dark = game.darkness()
         rng = self.t["vision"] * (1 - 0.6 * dark)

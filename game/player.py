@@ -67,6 +67,9 @@ class Player:
         self.action = None               # долгое действие: {"name", "time", "left", "done"}
         self.kills = 0
         self.hit_flash = 0.0
+        self.god = False                 # режим бога: бессмертие, враги не замечают
+        self.noclip = False              # проход сквозь стены (команда консоли)
+        self.sleep_bed = False
 
     # ------------------------------------------------ черты и навыки
     def has(self, trait):
@@ -90,6 +93,8 @@ class Player:
 
     # ------------------------------------------------ вес и экипировка
     def carry_limit(self):
+        if self.god:
+            return 999.0
         lim = 10.0
         for t in self.traits:
             lim += TRAITS[t].get("carry", 0)
@@ -298,6 +303,8 @@ class Player:
     # ------------------------------------------------ урон
     def hurt(self, dmg, kind, log):
         """Получить удар. kind: infected / dog / bandit / brute / fall."""
+        if self.god:
+            return
         self.hit_flash = 0.3
         prot = self.protection()
         dmg *= (1 - prot * 0.5)
@@ -380,6 +387,8 @@ class Player:
         return out
 
     def dead(self):
+        if self.god:
+            return False
         return self.health <= 0 or self.disease >= 100
 
     def to_dict(self):

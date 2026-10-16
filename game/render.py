@@ -8,20 +8,21 @@ import random
 
 import pygame
 
-from .config import SCREEN_W, SCREEN_H, TILE_W, TILE_H, HALF_W, HALF_H, WALL_H
+from .config import TILE_W, TILE_H, HALF_W, HALF_H, WALL_H
+from . import config as cfg
 from .iso import to_screen, to_tile
 from .data import OBJECTS
 from . import art, ai
 
 _dark = None
 _tint = None
-_particles = [(random.uniform(0, SCREEN_W), random.uniform(0, SCREEN_H), random.uniform(0.6, 1.4)) for _ in range(160)]
+_particles = [(random.uniform(0, cfg.SCREEN_W), random.uniform(0, cfg.SCREEN_H), random.uniform(0.6, 1.4)) for _ in range(160)]
 
 
 def visible_range(game):
     """Какие клетки попадают на экран (с запасом для высоких спрайтов)."""
     cam = game.cam
-    corners = [to_tile(0, -120, cam), to_tile(SCREEN_W, -120, cam), to_tile(0, SCREEN_H + 60, cam), to_tile(SCREEN_W, SCREEN_H + 60, cam)]
+    corners = [to_tile(0, -120, cam), to_tile(cfg.SCREEN_W, -120, cam), to_tile(0, cfg.SCREEN_H + 60, cam), to_tile(cfg.SCREEN_W, cfg.SCREEN_H + 60, cam)]
     xs = [c[0] for c in corners]
     ys = [c[1] for c in corners]
     z = game.zone
@@ -42,7 +43,7 @@ def draw_world(screen, game):
         for tx in range(x0, x1 + 1):
             sx = (tx - ty) * HALF_W - cam.x
             sy = (tx + ty) * HALF_H - cam.y
-            if sx < -TILE_W or sx > SCREEN_W + TILE_W or sy < -TILE_H or sy > SCREEN_H + 10:
+            if sx < -TILE_W or sx > cfg.SCREEN_W + TILE_W or sy < -TILE_H or sy > cfg.SCREEN_H + 10:
                 continue
             screen.blit(gt[row[tx]][(tx * 7 + ty * 13) % 4], (sx - HALF_W, sy))
 
@@ -105,7 +106,7 @@ def _draw_object(screen, game, tx, ty, o, pdepth, t_now):
     cam = game.cam
     sx = (tx - ty) * HALF_W - cam.x
     sy = (tx + ty) * HALF_H - cam.y
-    if sx < -120 or sx > SCREEN_W + 120 or sy < -40 or sy > SCREEN_H + 140:
+    if sx < -120 or sx > cfg.SCREEN_W + 120 or sy < -40 or sy > cfg.SCREEN_H + 140:
         return
     info = OBJECTS.get(o, {})
     if info.get("wall"):
@@ -139,7 +140,7 @@ def _flash(look, t):
 
 def _draw_enemy(screen, game, e):
     sx, sy = to_screen(e.x, e.y, game.cam)
-    if sx < -60 or sx > SCREEN_W + 60 or sy < -40 or sy > SCREEN_H + 80:
+    if sx < -60 or sx > cfg.SCREEN_W + 60 or sy < -40 or sy > cfg.SCREEN_H + 80:
         return
     t = e.t
     if e.kind == "dog":
@@ -192,8 +193,8 @@ def _draw_light(screen, game):
         dark = min(0.95, dark * 1.12)
     if dark <= 0.02:
         return
-    if _dark is None:
-        _dark = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    if _dark is None or _dark.get_size() != (cfg.SCREEN_W, cfg.SCREEN_H):
+        _dark = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
     _dark.fill((6, 6, 18, int(245 * dark)))
     cam = game.cam
     p = game.player
@@ -234,8 +235,8 @@ def _draw_weather(screen, game):
     if game.zone.dark:
         return
     indoor = game.zone.indoor(int(game.player.x), int(game.player.y))
-    if _tint is None:
-        _tint = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    if _tint is None or _tint.get_size() != (cfg.SCREEN_W, cfg.SCREEN_H):
+        _tint = pygame.Surface((cfg.SCREEN_W, cfg.SCREEN_H), pygame.SRCALPHA)
     col = None
     if clock.front:
         col = (220, 180, 50, 95 if not indoor else 45)
@@ -250,12 +251,12 @@ def _draw_weather(screen, game):
     t = game.time_real
     if clock.weather == "rain":
         for i, (x, y, s) in enumerate(_particles):
-            px = (x - t * 120 * s) % SCREEN_W
-            py = (y + t * 600 * s) % SCREEN_H
+            px = (x - t * 120 * s) % cfg.SCREEN_W
+            py = (y + t * 600 * s) % cfg.SCREEN_H
             pygame.draw.line(screen, (170, 180, 200), (px, py), (px - 3, py + 12))
     elif not indoor:
         c = (230, 200, 110) if clock.front else (210, 180, 120)
         for i, (x, y, s) in enumerate(_particles):
-            px = (x + t * 420 * s) % SCREEN_W
-            py = (y + math.sin(t * 2 + i) * 20 + t * 40 * s) % SCREEN_H
+            px = (x + t * 420 * s) % cfg.SCREEN_W
+            py = (y + math.sin(t * 2 + i) * 20 + t * 40 * s) % cfg.SCREEN_H
             pygame.draw.line(screen, c, (px, py), (px + 10 * s, py + 2))

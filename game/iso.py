@@ -6,7 +6,8 @@
     tx = (sx / HALF_W + sy / HALF_H) / 2
     ty = (sy / HALF_H - sx / HALF_W) / 2
 """
-from .config import HALF_W, HALF_H, SCREEN_W, SCREEN_H
+from .config import HALF_W, HALF_H
+from . import config as cfg
 
 
 class Camera:
@@ -17,16 +18,16 @@ class Camera:
     def follow(self, tx, ty, dt):
         """Плавно подвести камеру к точке (tx, ty) в клетках."""
         wx, wy = world_px(tx, ty)
-        target_x = wx - SCREEN_W / 2
-        target_y = wy - SCREEN_H / 2 + 40
+        target_x = wx - cfg.SCREEN_W / 2
+        target_y = wy - cfg.SCREEN_H / 2 + 40
         k = min(1.0, dt * 8)
         self.x += (target_x - self.x) * k
         self.y += (target_y - self.y) * k
 
     def snap(self, tx, ty):
         wx, wy = world_px(tx, ty)
-        self.x = wx - SCREEN_W / 2
-        self.y = wy - SCREEN_H / 2 + 40
+        self.x = wx - cfg.SCREEN_W / 2
+        self.y = wy - cfg.SCREEN_H / 2 + 40
 
 
 def world_px(tx, ty):

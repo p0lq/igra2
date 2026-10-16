@@ -126,26 +126,39 @@ def _dombra(rnd):
 
 
 class SoundSystem:
-    def __init__(self):
+    """Проигрывание звуков с учётом громкостей из настроек (общая, эффекты, фон, музыка)."""
+
+    def __init__(self, settings):
+        self.st = settings
         self.enabled = pygame.mixer.get_init() is not None
-        self.muted = False
         self.sounds = {}
         self.wind = None
         self.music = None
+        self.wind_ch = None
+        self.music_ch = None
         if not self.enabled:
             return
         rnd = random.Random(99)
         self.sounds = _make(rnd)
         self.wind = _wind(rnd)
         self.music = _dombra(rnd)
-        self.wind_ch = None
+
+    @property
+    def muted(self):
+        return self.st["muted"]
+
+    def _vol(self, group):
+        """Итоговая громкость группы: общая × группа (обе в процентах)."""
+        if self.muted:
+            return 0.0
+        return self.st["master"] / 100 * self.st[group] / 100
 
     def play(self, name, vol=1.0):
         if not self.enabled or self.muted or name not in self.sounds:
             return
         ch = self.sounds[name].play()
         if ch:
-            ch.set_volume(vol)
+            ch.set_volume(vol * self._vol("sfx"))
 
     def ambient(self, outdoor, storm):
         """Фоновый ветер: громче в бурю, тише в помещении."""
@@ -154,17 +167,23 @@ class SoundSystem:
         if self.wind_ch is None or not self.wind_ch.get_busy():
             self.wind_ch = self.wind.play(loops=-1)
         if self.wind_ch:
-            v = 0.0 if self.muted else (0.9 if storm else 0.35) * (1.0 if outdoor else 0.3)
-            self.wind_ch.set_volume(v)
+            v = (0.9 if storm else 0.35) * (1.0 if outdoor else 0.3)
+            self.wind_ch.set_volume(v * self._vol("ambient"))
 
     def play_music(self):
         if self.enabled and not self.muted:
-            ch = self.music.play()
-            if ch:
-                ch.set_volume(0.35)
+            self.music_ch = self.music.play()
+            self.update_volumes()
+
+    def update_volumes(self):
+        """Вызывается, когда игрок двигает ползунки в настройках."""
+        if self.music_ch and self.music_ch.get_busy():
+            self.music_ch.set_volume(0.6 * self._vol("music"))
 
     def toggle_mute(self):
-        self.muted = not self.muted
+        self.st["muted"] = not self.st["muted"]
         if self.muted and self.enabled:
             pygame.mixer.stop()
             self.wind_ch = None
+            self.music_ch = None
+        self.st.save()
