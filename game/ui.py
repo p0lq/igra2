@@ -46,8 +46,14 @@ class UI:
             self._fonts[key] = f
         return self._fonts[key]
 
+    @staticmethod
+    def to_logical(pos):
+        """Пиксели окна -> пиксели кадра (если игра сама растягивает кадр на окно)."""
+        kx, ky = cfg.VIEW_SCALE
+        return int(pos[0] / kx), int(pos[1] / ky)
+
     def begin(self, events):
-        self.mouse = pygame.mouse.get_pos()
+        self.mouse = self.to_logical(pygame.mouse.get_pos())
         self.click = None
         self.rclick = None
         self.release = None
@@ -55,12 +61,12 @@ class UI:
         self.shift = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
         for e in events:
             if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
-                self.release = e.pos
+                self.release = self.to_logical(e.pos)
             elif e.type == pygame.MOUSEBUTTONDOWN:
                 if e.button == 1:
-                    self.click = e.pos
+                    self.click = self.to_logical(e.pos)
                 elif e.button == 3:
-                    self.rclick = e.pos
+                    self.rclick = self.to_logical(e.pos)
             elif e.type == pygame.MOUSEWHEEL:
                 self.wheel = e.y
 

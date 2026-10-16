@@ -17,7 +17,7 @@ from .localization import parse_markup
 from . import worldgen, physics, art, render, ui as uimod, actions, crafting, save, ai, inventory as inv
 from .dialogue import Dialogue, apply
 from .sound import SoundSystem
-from .settings import Settings, apply_display
+from .settings import Settings, apply_display, present
 from .console import Console
 
 # окна, во время которых время в мире стоит
@@ -31,9 +31,13 @@ class Game:
         pygame.mixer.pre_init(22050, -16, 1, 512)
         pygame.init()
         pygame.display.set_caption(TITLE)
-        pygame.display.set_icon(self._make_icon())
+        self.icon = self._make_icon()
+        pygame.display.set_icon(self.icon)
         self.settings = Settings()
-        self.screen = apply_display(self.settings)
+        # display — окно; screen — то, на чём рисует игра (само окно или холст, см. settings.py)
+        self.display, canvas = apply_display(self.settings, self.icon)
+        self.screen = canvas or self.display
+        self.video_pending = False
         self.pending_video = {k: self.settings[k] for k in ("resolution", "display", "scale", "vsync")}
         self.settings_tab = 0
         self.settings_return = None
@@ -118,6 +122,8 @@ class Game:
     # ================================================================ запуск
     def run(self):
         while self.running:
+            if self.video_pending:
+                self._do_apply_video()
             dt = min(0.05, self.clock_fps.tick(self.settings["fps_limit"]) / 1000.0)
             self.time_real += dt
             events = pygame.event.get()
@@ -142,6 +148,8 @@ class Game:
                     self._play_events(events)
                     self.update(dt)
                 self.draw_play()
+            if self.screen is not self.display:
+                present(self.display, self.screen)
             pygame.display.flip()
         pygame.quit()
 
@@ -162,8 +170,17 @@ class Game:
         self.window = "settings"
 
     def apply_video(self):
-        """Пересоздать окно с новым разрешением/режимом и поставить камеру на место."""
-        self.screen = apply_display(self.settings)
+        """Попросить пересоздать окно. Делается в начале следующего кадра: сейчас кадр
+        ещё рисуется на старом экране, и закрыть его посреди отрисовки нельзя."""
+        self.video_pending = True
+
+    def _do_apply_video(self):
+        self.video_pending = False
+        self.display, canvas = apply_display(self.settings, self.icon)
+        self.screen = canvas or self.display
+        pygame.event.clear()          # события старого окна (координаты мыши) больше не нужны
+        self.ui.active = None
+        self.drag = None
         if self.state in ("play", "dead"):
             self.cam.snap(self.player.x, self.player.y)
 

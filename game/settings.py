@@ -101,8 +101,20 @@ def logical_size(res, scale):
     return int(res[0] / k), int(res[1] / k)
 
 
-def apply_display(st):
-    """Создать (или пересоздать) окно по настройкам. Возвращает поверхность экрана."""
+def apply_display(st, icon=None):
+    """Создать (или пересоздать) окно по настройкам.
+
+    Возвращает (display, canvas):
+      display — поверхность окна;
+      canvas  — холст, на котором рисует игра, или None, если игра рисует прямо в окно.
+
+    Три случая:
+      1. Полный экран — флаг SCALED: SDL сам растягивает кадр на весь монитор (видеокартой).
+      2. Окно с масштабом 100% — флаг SCALED, окно ровно размера кадра.
+      3. Окно с масштабом больше 100% — обычное окно нужного размера, игра рисует на холсте
+         меньшего размера, а мы каждый кадр растягиваем холст на окно (present()).
+         Координаты мыши в этом случае пересчитываются через cfg.VIEW_SCALE.
+    """
     desk = desktop_size()
     mode = st["display"]
     res = tuple(st["resolution"])
@@ -110,24 +122,52 @@ def apply_display(st):
         res = desk
     elif mode == "window":
         res = (min(res[0], desk[0]), min(res[1], desk[1]))
-    flags = pygame.SCALED
-    if mode == "fullscreen":
-        flags |= pygame.FULLSCREEN
-    elif mode == "borderless":
-        flags |= pygame.NOFRAME
     size = logical_size(res, st["scale"])
+    use_canvas = mode != "fullscreen" and size != res
+
+    if pygame.display.get_surface() is not None:
+        # Повторный set_mode с флагом SCALED и другим размером ломает вывод картинки:
+        # окно меняется, а на экране остаётся старый застывший кадр. Поэтому дисплей
+        # пересоздаём целиком. Картинки, шрифты и звук от этого не страдают.
+        caption = pygame.display.get_caption()[0]
+        pygame.display.quit()
+        pygame.display.init()
+        pygame.display.set_caption(caption)
+        if icon is not None:
+            pygame.display.set_icon(icon)
+
+    if use_canvas:
+        flags = pygame.NOFRAME if mode == "borderless" else 0
+        win_size = res
+    else:
+        flags = pygame.SCALED
+        if mode == "fullscreen":
+            flags |= pygame.FULLSCREEN
+        elif mode == "borderless":
+            flags |= pygame.NOFRAME
+        win_size = size
     try:
-        screen = pygame.display.set_mode(size, flags, vsync=1 if st["vsync"] else 0)
+        display = pygame.display.set_mode(win_size, flags, vsync=1 if st["vsync"] else 0)
     except pygame.error:
-        screen = pygame.display.set_mode(size, flags)   # видеокарта не умеет vsync
-    if mode != "fullscreen":
+        display = pygame.display.set_mode(win_size, flags)   # vsync недоступен — работаем без него
+    if mode == "borderless":
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", DeprecationWarning)
-                win = pygame.Window.from_display_module()
-            win.size = res          # окно нужного размера, картинка растягивается
-            win.position = (0, 0) if mode == "borderless" else pygame.WINDOWPOS_CENTERED
+                pygame.Window.from_display_module().position = (0, 0)
         except (AttributeError, pygame.error):
-            pass                    # старая версия pygame — окно останется размера картинки
-    cfg.SCREEN_W, cfg.SCREEN_H = screen.get_size()
-    return screen
+            pass
+
+    canvas = pygame.Surface(size).convert() if use_canvas else None
+    cfg.SCREEN_W, cfg.SCREEN_H = size
+    cfg.VIEW_SCALE = (display.get_width() / size[0], display.get_height() / size[1]) if use_canvas else (1.0, 1.0)
+    return display, canvas
+
+
+def present(display, canvas):
+    """Растянуть холст на окно (случай 3). Целый масштаб — чёткими пикселями, дробный — сглаженно."""
+    k = display.get_width() / canvas.get_width()
+    if abs(k - round(k)) < 0.01:
+        pygame.transform.scale(canvas, display.get_size(), display)
+    else:
+        pygame.transform.smoothscale(canvas, display.get_size(), display)
