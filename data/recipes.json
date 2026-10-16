@@ -1,0 +1,20 @@
+{
+  "_comment": "Рецепты крафта. in — что тратится, tools — что нужно иметь (не тратится), station — fire/workbench, place — результат ставится в мир как объект. known — известен с начала игры.",
+
+  "campfire":       {"name": "Костёр", "in": {"brushwood": 3, "matches": 1}, "place": "campfire", "skill": "survival", "time": 4, "known": true},
+  "boil_water":     {"name": "Вскипятить воду", "in": {"water_dirty": 1}, "out": {"water_clean": 1}, "station": "fire", "skill": "survival", "time": 3, "known": true},
+  "filter_water":   {"name": "Профильтровать воду", "in": {"water_dirty": 1}, "tools": ["water_filter"], "out": {"water_clean": 1}, "skill": "survival", "time": 3, "known": true},
+  "water_filter":   {"name": "Фильтр для воды", "in": {"rag": 2, "charcoal": 1, "bottle_empty": 1}, "out": {"water_filter": 1}, "skill": "survival", "time": 4, "known": true},
+  "meat_cooked":    {"name": "Пожарить мясо", "in": {"meat_raw": 1}, "out": {"meat_cooked": 1}, "station": "fire", "skill": "cooking", "time": 4, "known": true},
+  "tea_hot":        {"name": "Заварить чай", "in": {"tea_dry": 1, "water_clean": 1}, "out": {"tea_hot": 2}, "station": "fire", "skill": "cooking", "time": 3, "known": true},
+  "workbench":      {"name": "Верстак", "in": {"planks": 4, "nails": 4}, "tools": ["hammer"], "place": "workbench", "skill": "carpentry", "time": 8, "known": true},
+  "nail_bat":       {"name": "Дубина с гвоздями", "in": {"planks": 1, "nails": 2}, "tools": ["hammer"], "out": {"nail_bat": 1}, "skill": "carpentry", "time": 4, "known": true},
+  "bandage_home":   {"name": "Бинт самодельный", "in": {"rag": 2}, "out": {"bandage_home": 1}, "station": "fire", "skill": "firstaid", "time": 3, "known": false},
+  "splint":         {"name": "Шина", "in": {"planks": 1, "rag": 1}, "out": {"splint": 1}, "skill": "firstaid", "time": 3, "known": false},
+  "gas_filter_home":{"name": "Фильтр для противогаза", "in": {"can_empty": 1, "charcoal": 1, "rag": 1}, "out": {"gas_filter_home": 1}, "skill": "survival", "time": 4, "known": false},
+  "can_alarm":      {"name": "Сигнализация из банок", "in": {"can_empty": 3, "twine": 1}, "place": "can_alarm", "skill": "carpentry", "time": 3, "known": false},
+  "burzhuika":      {"name": "Печь-«буржуйка»", "in": {"scrap": 4, "wire": 1}, "tools": ["hammer"], "station": "workbench", "place": "burzhuika", "skill": "carpentry", "time": 10, "known": false},
+  "rain_collector": {"name": "Сборщик дождевой воды", "in": {"planks": 2, "tarp": 1}, "tools": ["hammer"], "station": "workbench", "place": "rain_collector", "skill": "carpentry", "time": 8, "known": false},
+  "plov":           {"name": "Плов", "in": {"rice": 1, "meat_raw": 1, "carrot": 1, "water_clean": 1}, "tools": ["kazan"], "out": {"plov": 2}, "station": "fire", "skill": "cooking", "time": 8, "known": false},
+  "thorn_tea":      {"name": "Отвар верблюжьей колючки", "in": {"thorn": 3, "water_clean": 1}, "out": {"thorn_tea": 1}, "station": "fire", "skill": "cooking", "time": 4, "known": false}
+}

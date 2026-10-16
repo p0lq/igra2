@@ -1,0 +1,15 @@
+{
+  "_comment": "Жители колхоза «Заря». day/night — метки мест на карте колхоза (цифры в шаблонах worldgen.py), stock — что есть на обмен. look — палитра для отрисовки.",
+
+  "erlan":     {"name": "Ерлан-ага", "title": "председатель", "dialog": "erlan", "day": "1", "night": "2",
+                "look": {"body": [92, 70, 120], "legs": [50, 45, 40], "skin": [190, 140, 100], "hat": "kalpak"}, "stock": {}},
+  "galya":     {"name": "Тётя Галя", "title": "торговка", "dialog": "galya", "day": "3", "night": "4",
+                "look": {"body": [150, 60, 60], "legs": [60, 50, 60], "skin": [225, 180, 150], "hat": "scarf"},
+                "stock": {"lepeshka": 4, "tushenka": 2, "kilka": 3, "water_clean": 2, "tea_dry": 2, "bandage": 2, "matches": 3, "charcoal": 2, "rice": 1, "carrot": 3, "mask": 1, "batteries": 2, "cigarettes": 3, "backpack": 1}},
+  "kim":       {"name": "Виктор Ким", "title": "механик", "dialog": "kim", "day": "5", "night": "6",
+                "look": {"body": [60, 80, 110], "legs": [60, 80, 110], "skin": [215, 175, 130], "hat": "cap"},
+                "stock": {"hammer": 1, "nails": 6, "planks": 4, "wire": 2, "crowbar": 1, "flashlight": 1, "scrap": 2}},
+  "bakhtiyar": {"name": "Бахтияр", "title": "переводчик", "dialog": "bakhtiyar", "day": "7", "night": "8",
+                "look": {"body": [210, 205, 190], "legs": [70, 60, 50], "skin": [185, 135, 95], "hat": "doppi"},
+                "stock": {"kurt": 4, "lepeshka": 2, "thorn": 4, "doppi": 1}}
+}

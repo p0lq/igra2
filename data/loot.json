@@ -1,0 +1,24 @@
+{
+  "_comment": "Таблицы добычи. rolls — сколько раз бросаем кубик [мин, макс]. items — [id, вес шанса, мин. кол-во, макс. кол-во]. Генерируется при первом обыске.",
+
+  "home":    {"rolls": [1, 3], "items": [["rag", 6, 1, 3], ["vatnik", 2, 1, 1], ["chapan", 2, 1, 1], ["matches", 4, 1, 1], ["analgin", 2, 1, 2], ["bandage", 2, 1, 1], ["twine", 3, 1, 1], ["batteries", 2, 1, 1], ["flashlight", 1, 1, 1], ["cigarettes", 3, 1, 2], ["tenge", 3, 1, 2], ["panama", 2, 1, 1], ["doppi", 1, 1, 1], ["bag", 1, 1, 1], ["cassette", 2, 1, 1], ["hammer", 1, 1, 1], ["knife", 1, 1, 1], ["note_kk", 1, 1, 1]]},
+  "fridge":  {"rolls": [0, 2], "items": [["kumys", 2, 1, 1], ["carrot", 3, 1, 2], ["condensed", 2, 1, 1], ["water_clean", 1, 1, 1], ["kurt", 3, 1, 3]]},
+  "kitchen": {"rolls": [1, 2], "items": [["tushenka", 3, 1, 1], ["kilka", 3, 1, 2], ["rice", 2, 1, 1], ["tea_dry", 3, 1, 1], ["suhari", 3, 1, 2], ["matches", 3, 1, 1], ["knife", 2, 1, 1], ["bottle_empty", 4, 1, 2], ["water_dirty", 2, 1, 1], ["kazan", 1, 1, 1], ["lepeshka", 2, 1, 1]]},
+  "table":   {"rolls": [0, 2], "items": [["matches", 2, 1, 1], ["cigarettes", 2, 1, 1], ["note_ru", 1, 1, 1], ["vodka", 2, 1, 1], ["bottle_empty", 3, 1, 1], ["tenge", 2, 1, 3], ["batteries", 1, 1, 1], ["suhari", 2, 1, 1]]},
+  "crate":   {"rolls": [1, 3], "items": [["planks", 4, 1, 3], ["nails", 4, 1, 3], ["scrap", 4, 1, 2], ["wire", 3, 1, 1], ["tarp", 2, 1, 1], ["hammer", 1, 1, 1], ["pipe", 2, 1, 1], ["can_empty", 3, 1, 3], ["twine", 2, 1, 1], ["shovel", 1, 1, 1]]},
+  "safe":    {"rolls": [1, 3], "items": [["dollars", 4, 1, 3], ["ammo_9", 3, 4, 8], ["pm", 1, 1, 1], ["vodka", 2, 1, 1], ["antiseptic", 2, 1, 1]]},
+  "books":   {"rolls": [1, 2], "items": [["book_diy", 3, 1, 1], ["book_tech", 3, 1, 1], ["book_med", 2, 1, 1], ["book_kk", 3, 1, 1], ["book_cook", 2, 1, 1]]},
+  "medical": {"rolls": [1, 3], "items": [["bandage", 5, 1, 2], ["antiseptic", 4, 1, 1], ["analgin", 4, 1, 2], ["charcoal", 4, 1, 2], ["mask", 3, 1, 1], ["splint", 1, 1, 1]]},
+  "lab":     {"rolls": [1, 2], "items": [["charcoal", 3, 1, 2], ["mask", 2, 1, 1], ["gas_filter", 2, 1, 1], ["antiseptic", 2, 1, 1], ["bottle_empty", 2, 1, 1]]},
+  "shop":    {"rolls": [1, 3], "items": [["tushenka", 3, 1, 2], ["kilka", 3, 1, 2], ["condensed", 2, 1, 1], ["suhari", 3, 1, 2], ["tea_dry", 3, 1, 1], ["cigarettes", 4, 1, 2], ["vodka", 3, 1, 1], ["matches", 3, 1, 2], ["batteries", 2, 1, 2], ["water_clean", 2, 1, 1], ["rice", 2, 1, 1]]},
+  "locker":  {"rolls": [1, 3], "items": [["ammo_9", 3, 3, 8], ["gasmask", 1, 1, 1], ["gas_filter", 2, 1, 1], ["vatnik", 2, 1, 1], ["tushenka", 3, 1, 2], ["bandage", 2, 1, 1], ["flashlight", 1, 1, 1], ["batteries", 2, 1, 1], ["helmet", 1, 1, 1], ["crowbar", 1, 1, 1]]},
+  "trunk":   {"rolls": [0, 3], "items": [["scrap", 3, 1, 2], ["tarp", 2, 1, 1], ["crowbar", 1, 1, 1], ["wire", 2, 1, 1], ["water_dirty", 2, 1, 1], ["bottle_empty", 2, 1, 1], ["bag", 1, 1, 1], ["vodka", 1, 1, 1], ["cigarettes", 1, 1, 1], ["ammo_16", 1, 2, 4]]},
+  "yurt":    {"rolls": [1, 3], "items": [["kumys", 3, 1, 1], ["kurt", 4, 1, 3], ["lepeshka", 3, 1, 2], ["chapan", 2, 1, 1], ["kazan", 1, 1, 1], ["tea_dry", 2, 1, 1], ["shotgun", 1, 1, 1], ["ammo_16", 1, 2, 4]]},
+  "bandit":  {"rolls": [1, 3], "items": [["ammo_9", 4, 2, 6], ["ammo_16", 2, 2, 4], ["vodka", 3, 1, 1], ["cigarettes", 3, 1, 3], ["dollars", 2, 1, 2], ["tushenka", 2, 1, 1], ["bandage", 2, 1, 1], ["pm", 1, 1, 1]]},
+  "pump":    {"rolls": [1, 2], "items": [["wire", 3, 1, 1], ["scrap", 3, 1, 2], ["mask", 2, 1, 1]]},
+  "none":    {"rolls": [0, 0], "items": []},
+
+  "corpse_infected": {"rolls": [0, 1], "items": [["rag", 4, 1, 2], ["tenge", 2, 1, 1], ["cigarettes", 2, 1, 1], ["matches", 1, 1, 1], ["bandage", 1, 1, 1], ["suhari", 1, 1, 1]]},
+  "corpse_bandit":   {"rolls": [1, 2], "items": [["ammo_9", 4, 2, 6], ["vodka", 2, 1, 1], ["cigarettes", 3, 1, 2], ["dollars", 2, 1, 1], ["bandage", 2, 1, 1]]},
+  "corpse_dog":      {"rolls": [1, 1], "items": [["meat_raw", 1, 1, 2]]}
+}
